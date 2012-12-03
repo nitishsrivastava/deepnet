@@ -1,0 +1,58 @@
+name: "mnist_dbn"
+model_type: DBN
+hyperparams {
+  base_epsilon: 1.0
+  epsilon_decay : NONE
+  epsilon_decay_half_life : 5000
+  initial_momentum : 0.5
+  final_momentum : 0.9
+  momentum_change_steps : 30000
+  sparsity : false
+  sparsity_target : 0.1
+  sparsity_cost : 0.001
+  sparsity_damping : 0.9
+  apply_l2_decay: true
+  l2_decay: 0.0001
+  activation: LOGISTIC
+  gibbs_steps: 1
+  mcmc_steps: 1
+}
+
+layer {
+  name: "input layer"
+  dimensions: 500
+  is_input: true
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  data_field {
+    model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
+    layer_name: "hidden1"
+  }
+  loss_function: SQUARED_LOSS
+  performance_stats {
+    compute_cross_entropy: false
+    compute_correct_preds: false
+    compute_error: true
+  }
+}
+
+layer {
+  name: "hidden1"
+  dimensions: 500
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+
+edge {
+  node1: "input layer"
+  node2: "hidden1"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma : 1.0
+  }
+}

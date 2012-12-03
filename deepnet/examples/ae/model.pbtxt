@@ -1,0 +1,84 @@
+name: "mnist_autoencoder_relu"
+model_type: FEED_FORWARD_NET
+hyperparams {
+  base_epsilon: 0.1
+  epsilon_decay : NONE
+  epsilon_decay_half_life : 10000
+  initial_momentum : 0.5
+  final_momentum : 0.9
+  momentum_change_steps : 50000
+  sparsity : false
+  sparsity_target : 0.1
+  sparsity_cost : 0.001
+  sparsity_damping : 0.9
+  apply_l2_decay: true
+  l2_decay: 0.0001
+  activation: RECTIFIED_LINEAR
+}
+
+layer {
+  name: "input layer"
+  dimensions: 784
+  shape:28
+  shape:28
+  is_input: true
+  data_field {
+    train: "train_data"
+    validation: "validation_data"
+    test: "test_data"
+  }
+  hyperparams {
+    activation: LOGISTIC
+  }
+}
+
+layer {
+  name: "hidden1"
+  dimensions: 256
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+layer {
+  name: "output layer"
+  dimensions: 784
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  hyperparams{
+    dropout: false
+    activation: LOGISTIC
+  }
+  is_output: true
+  loss_function: SQUARED_LOSS
+  data_field {
+    tied: true
+    tied_to: "input layer"
+  }
+  performance_stats {
+    compute_error: true
+  }
+}
+edge {
+  node1: "input layer"
+  node2: "hidden1"
+  receptive_field_width: 28
+  display_rows: 16
+  display_cols: 16
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma : 1.0
+  }
+}
+edge {
+  node1: "hidden1"
+  node2: "output layer"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma : 1.0
+  }
+}

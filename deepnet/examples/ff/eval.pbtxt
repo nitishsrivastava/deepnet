@@ -1,0 +1,4 @@
+stopcondition {
+  all_processed: true
+}
+batchsize: 100

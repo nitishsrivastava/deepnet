@@ -1,0 +1,147 @@
+name: "joint_dbm_from_random"
+model_type: DBM
+hyperparams {
+  base_epsilon: 0.01
+  epsilon_decay : NONE
+  epsilon_decay_half_life : 5000
+  initial_momentum : 0.0
+  final_momentum : 0.0
+  momentum_change_steps : 10000
+  dropout: false
+  dropout_prob: 0.0
+  sparsity : false
+  sparsity_target : 0.1
+  sparsity_cost : 0.001
+  sparsity_damping : 0.9
+  apply_l2_decay: true
+  l2_decay: 0.0001
+  activation: LOGISTIC
+  mf_steps: 5
+  gibbs_steps: 5
+}
+positive_phase_order : "hidden1"
+positive_phase_order : "joint hidden"
+positive_phase_order : "hidden2"
+
+negative_phase_order : "input layer"
+negative_phase_order : "label layer"
+negative_phase_order : "hidden2"
+negative_phase_order : "hidden1"
+negative_phase_order : "joint hidden"
+
+layer {
+  name: "input layer"
+  dimensions: 784
+  is_input: true
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  data_field {
+    train: "train_data"
+    validation: "validation_data"
+    test: "test_data"
+  }
+  hyperparams {
+    activation: LOGISTIC
+    dropout: false
+  }
+  loss_function: SQUARED_LOSS
+  performance_stats {
+    compute_cross_entropy: false
+    compute_correct_preds: false
+    compute_error: true
+  }
+}
+
+layer {
+  name: "label layer"
+  dimensions: 1
+  numlabels: 10
+  is_input: true
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  data_field {
+    train: "train_labels"
+    validation: "validation_labels"
+    test: "test_labels"
+  }
+  hyperparams {
+    activation: SOFTMAX
+    dropout: false
+  }
+  loss_function: SQUARED_LOSS
+  performance_stats {
+    compute_cross_entropy: false
+    compute_correct_preds: false
+    compute_error: true
+  }
+}
+layer {
+  name: "hidden1"
+  dimensions: 500
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+layer {
+  name: "hidden2"
+  dimensions: 500
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+layer {
+  name: "joint hidden"
+  dimensions: 2000
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+edge {
+  node1: "input layer"
+  node2: "hidden1"
+  directed: false
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN
+    sigma: 0.01
+  }
+}
+edge {
+  node1: "hidden1"
+  node2: "hidden2"
+  directed: false
+  up_factor: 1.0 
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN
+    sigma: 0.01
+  }
+}
+edge {
+  node1: "hidden2"
+  node2: "joint hidden"
+  directed: false
+  down_factor: 1.0
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN
+    sigma: 0.001
+  }
+}
+edge {
+  node1: "label layer"
+  node2: "joint hidden"
+  directed: false
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN
+    sigma: 0.01
+  }
+}

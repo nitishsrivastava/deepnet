@@ -1,0 +1,77 @@
+name: "mnist_rbm1_PCD_1x1x_linear"
+model_type: DBM
+hyperparams {
+  base_epsilon: 0.001
+  epsilon_decay : NONE
+  epsilon_decay_half_life : 5000
+  initial_momentum : 0.0
+  final_momentum : 0.0
+  momentum_change_steps : 30000
+  sparsity : true
+  sparsity_target : 0.1
+  sparsity_cost : 0.01
+  sparsity_damping : 0.9
+  dropout : false
+  dropout_prob : 0.5
+  apply_l2_decay: true
+  l2_decay: 0.0001
+  activation: LOGISTIC
+  mf_steps: 1
+  gibbs_steps: 1
+}
+
+layer {
+  name: "input layer"
+  dimensions: 784
+  shape:28
+  shape:28
+  is_input: true
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  data_field {
+    train: "train_data"
+    validation: "validation_data"
+    test: "test_data"
+  }
+  hyperparams {
+    activation: LINEAR
+    #activation: LOGISTIC
+    dropout: false
+    sparsity: false
+  }
+  loss_function: SQUARED_LOSS
+  performance_stats {
+    compute_error: true
+  }
+}
+
+layer {
+  name: "hidden1"
+  dimensions: 256
+  shape: 16
+  shape: 16
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  performance_stats {
+    compute_sparsity: true
+  }
+}
+
+edge {
+  node1: "input layer"
+  node2: "hidden1"
+  directed: false
+  up_factor: 1.0
+  receptive_field_width: 28
+  display_rows: 16
+  display_cols: 16
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma : 1.0
+  }
+}

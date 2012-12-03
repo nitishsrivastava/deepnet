@@ -1,0 +1,100 @@
+name: "mnist_2layer_logistic"
+model_type: FEED_FORWARD_NET
+seed: 42
+hyperparams {
+  base_epsilon: 0.1
+  epsilon_decay : NONE
+  epsilon_decay_half_life : 10000
+  initial_momentum : 0.5
+  final_momentum : 0.9
+  momentum_change_steps : 3000
+  apply_l2_decay: false
+  l2_decay: 0.001
+  activation: LOGISTIC
+}
+
+layer {
+  name: "input layer"
+  dimensions: 784
+  is_input: true
+  data_field {
+    train: "train_data"
+    validation: "validation_data"
+    test: "test_data"
+  }
+}
+
+layer {
+  name: "output layer"
+  dimensions: 1
+  numlabels: 10
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  hyperparams{
+    activation: SOFTMAX
+  }
+  is_output: true
+  loss_function: CROSS_ENTROPY
+  data_field {
+    train: "train_labels"
+    validation: "validation_labels"
+    test: "test_labels"
+  }
+  performance_stats {
+    compute_cross_entropy: true
+    compute_correct_preds: true
+  }
+}
+
+layer {
+  name: "hidden1"
+  dimensions: 1024
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+
+layer {
+  name: "hidden2"
+  dimensions: 1024
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+
+edge {
+  node1: "input layer"
+  node2: "hidden1"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma: 1.0
+  }
+  receptive_field_width : 28
+  display_rows: 32
+  display_cols: 32
+}
+
+edge {
+  node1: "hidden1"
+  node2: "hidden2"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma: 1.0
+  }
+}
+
+edge {
+  node1: "hidden2"
+  node2: "output layer"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma: 1.0
+  }
+}
