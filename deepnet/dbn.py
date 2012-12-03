@@ -222,8 +222,7 @@ class DBN(DBM):
       datagetter = self.GetTestBatch
     for batch in range(numbatches):
       datagetter()
-      self.InferOneBatch(layer_to_tap, inputlayer, steps, method, mf_for_last,
-                         get_states_after_gibbs)
+      self.InferOneBatch(layer_to_tap, inputlayer, steps, method)
     return self.rep, self.inputs
 
   def GetAllRepresentations(self, numbatches, validation=True):
@@ -289,10 +288,10 @@ class DBN(DBM):
   def InferOneBatch(self, layer, inputlayers, steps, method, dumpstate=False):
     for net in self.feed_forward_net:
       net.ForwardPropagate(train=False)
-    self.Infer(steps, method, mf_for_last)
+    self.Infer(steps, method)
     for net in self.feed_backward_net:
       net.ForwardPropagate(train=False)
-    if dumspstate:
+    if dumpstate:
       self.DumpModelState(steps)
     self.rep[self.rep_pos:self.rep_pos + self.e_op.batchsize, :] =\
         layer.state.asarray().T
