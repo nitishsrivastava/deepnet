@@ -1,5 +1,3 @@
-
-
 # cudamat:
 # 	echo building cudamat
 # 	nvcc -O --ptxas-options=-v --compiler-options '-fPIC' -o libcudamat.so --shared cudamat.cu cudamat_kernels.cu -lcublas -L/pkgs_local/cuda-4.0/lib64
@@ -29,7 +27,7 @@ CCFILES				:= $(shell echo src/common/*.cpp)
 C_DEPS				:= $(shell echo include/common/*.h)
 
 
-include common-gcc-cuda-3.2.mk
+include common-gcc-cuda-4.0.mk
 
 makedirectories:
 	$(VERBOSE)mkdir -p $(LIBDIR)
