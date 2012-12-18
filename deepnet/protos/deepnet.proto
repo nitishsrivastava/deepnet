@@ -22,10 +22,9 @@ message Layer {
     optional string train = 1; 
     optional string validation = 2; 
     optional string test = 3;
-    // This stores the model that should be used to forward passed through
-    // to get the data.
+    // Data will be forward passed through this model and used as input.
     optional string model = 4;
-    // The name of the layer in the model whose data is going to be the input.
+    // The layer in the above model whose data is going to be the input.
     optional string layer_name = 5;
     optional bool tied = 6 [default=false];
     optional string tied_to = 7;
@@ -110,7 +109,6 @@ message Hyperparams {
   enum Adapt {
     NO_ADAPT = 0;
     ADAGRAD = 1;
-    ADASTAN = 2;
   }
   optional Adapt adapt = 24 [default=NO_ADAPT];
   optional int32 stop_dropout_for_last = 25 [default=0];
@@ -159,8 +157,6 @@ message Model {
 message Operation {
   enum Optimizer {
     GRADIENT_DESCENT = 0;
-    ADAGRAD = 1;
-    ADASTAN = 2;
     LBFGS = 3;
     CD = 4;
     PCD = 5;
@@ -177,7 +173,7 @@ message Operation {
   required string data_proto = 6;
   optional int32 eval_after = 7 [default=1];
   optional int32 checkpoint_after = 8 [default=1];
-  optional string checkpoint_directory = 9 [default="/ais/gobi3/u/nitish/tmp/"];
+  optional string checkpoint_directory = 9 [default="/tmp/"];
   optional bool skip_last_piece = 10 [default=true];
   optional bool randomize = 14 [default=false];
   optional int32 show_after = 15 [default=0];

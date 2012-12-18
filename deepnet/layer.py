@@ -370,6 +370,7 @@ class Layer(object):
     if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
       self.state.sum(axis=0, target=self.NN)
       if self.hyperparams.normalize:  # normalize word count vector.
+        self.NN.add(self.tiny)
         self.state.div_by_row(self.NN)
         self.state.mult(self.hyperparams.normalize_to)
         self.NN.assign(self.hyperparams.normalize_to)

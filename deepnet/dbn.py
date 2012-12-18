@@ -256,8 +256,12 @@ class DBN(DBM):
           i += 1
       for net in self.feed_forward_net:
         for node in net.node_list:
-          rep_list[i][batch*node.batchsize:(batch+1)*node.batchsize,:] =\
-              node.state.asarray().T
+          if node.is_input:
+            rep_list[i][batch*node.batchsize:(batch+1)*node.batchsize,:] =\
+                node.data.asarray().T
+          else:
+            rep_list[i][batch*node.batchsize:(batch+1)*node.batchsize,:] =\
+                node.state.asarray().T
           i += 1
     return dict(zip(names, rep_list))
 

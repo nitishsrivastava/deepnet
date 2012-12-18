@@ -19,9 +19,9 @@ def GetPerformanceStats(stat, prefix=''):
       prefix, stat.correct_preds/stat.count, stat.correct_preds, stat.count)
   if stat.compute_error:
     s += ' %s_E: %.3f' % (prefix, stat.error / stat.count)
-  if stat.compute_MAP:
+  if stat.compute_MAP and prefix != 'T':
     s += ' %s_MAP: %.3f' % (prefix, stat.MAP)
-  if stat.compute_prec50:
+  if stat.compute_prec50 and prefix != 'T':
     s += ' %s_prec50: %.3f' % (prefix, stat.prec50)
   if stat.compute_sparsity:
     s += ' %s_sp: %.3f' % (prefix, stat.sparsity)
@@ -161,20 +161,37 @@ class NeuralNet(object):
     """
     step = 0
     stats = []
+    collect_predictions = True
     if validation:
       datagetter = self.GetValidationBatch
       stopcondition = self.ValidationStopCondition
       prefix = 'V'
       stats_list = self.net.validation_stats
+      num_batches = self.input_datalayer[0].validation_data_handler.num_batches
     else:
       datagetter = self.GetTestBatch
       stopcondition = self.TestStopCondition
       prefix = 'E'
       stats_list = self.net.test_stats
+      num_batches = self.input_datalayer[0].test_data_handler.num_batches
     stop = stopcondition(0)
+    if collect_predictions:
+      output_layer = self.output_datalayer[0]
+      collect_pos = 0
+      batchsize = output_layer.batchsize
+      numdims = output_layer.state.shape[0]
+      predictions = np.zeros((batchsize * num_batches, numdims))
+      targets = np.zeros(predictions.shape)
     while not stop:
       datagetter()
       losses = self.EvaluateOneBatch()
+      if collect_predictions:
+        predictions[collect_pos:collect_pos + batchsize] = \
+            output_layer.state.asarray().T
+        targets[collect_pos:collect_pos + batchsize] = \
+            output_layer.data.asarray().T
+        collect_pos += batchsize
+
       if stats:
         for loss, acc in zip(losses, stats):
           Accumulate(acc, loss)
@@ -182,6 +199,16 @@ class NeuralNet(object):
         stats = losses
       step += 1
       stop = stopcondition(step)
+    if collect_predictions and stats:
+      #import pdb; pdb.set_trace()
+      MAP, prec50, MAP_list, prec50_list = self.ComputeScore(predictions, targets)
+      stat = stats[0]
+      stat.MAP = MAP
+      stat.prec50 = prec50
+      for m in MAP_list:
+        stat.MAP_list.extend([m])
+      for m in prec50_list:
+        stat.prec50_list.extend([m])
     for stat in stats:
       sys.stdout.write(GetPerformanceStats(stat, prefix=prefix))
       stats_list.extend(stats)
@@ -365,9 +392,9 @@ class NeuralNet(object):
           sys.stdout.write(GetPerformanceStats(stat, prefix='T'))
           self.net.train_stats.extend(stats)
           stats = []
-        # Evaluation on validation set.
+        # Evaluate on validation set.
         self.Evaluate(validation=True)
-        # Evaluation on test set.
+        # Evaluate on test set.
         self.Evaluate(validation=False)
         sys.stdout.write('\n')
       if self.SaveNow(step):
