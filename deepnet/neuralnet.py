@@ -24,7 +24,7 @@ def GetPerformanceStats(stat, prefix=''):
   if stat.compute_prec50 and prefix != 'T':
     s += ' %s_prec50: %.3f' % (prefix, stat.prec50)
   if stat.compute_sparsity:
-    s += ' %s_sp: %.3f' % (prefix, stat.sparsity)
+    s += ' %s_sp: %.3f' % (prefix, stat.sparsity / stat.count)
   return s
 
 def Accumulate(acc, perf):
@@ -32,30 +32,46 @@ def Accumulate(acc, perf):
  acc.cross_entropy += perf.cross_entropy
  acc.error += perf.error
  acc.correct_preds += perf.correct_preds
+ acc.sparsity += perf.sparsity
 
 class NeuralNet(object):
-  def __init__(self, net, t_op, e_op):
+
+  def __init__(self, net, t_op=None, e_op=None):
+    self.net = None
     if isinstance(net, deepnet_pb2.Model):
       self.net = net
-    else:
+    elif isinstance(net, str):
       self.net = ReadModel(net)
+    self.t_op = None
     if isinstance(t_op, deepnet_pb2.Operation):
       self.t_op = t_op
-    else:
+    elif isinstance(t_op, str):
       self.t_op = ReadOperation(t_op)
+    self.e_op = None
     if isinstance(e_op, deepnet_pb2.Operation):
       self.e_op = e_op
-    else:
+    elif isinstance(e_op, str):
       self.e_op = ReadOperation(e_op)
     cm.CUDAMatrix.init_random(self.net.seed)
     np.random.seed(self.net.seed)
     self.data = None
     self.layer = []
+    self.edge = []
     self.input_datalayer = []
     self.output_datalayer = []
-    self.edge = []
+    self.datalayer = []
+    self.tied_datalayer = []
     self.unclamped_layer = []
     self.SetLayerAndEdgeClass()
+    self.verbose = False
+    self.batchsize = 0
+    if self.t_op:
+      self.verbose = self.t_op.verbose
+      self.batchsize = self.t_op.batchsize
+    elif self.e_op:
+      self.verbose = self.e_op.verbose
+      self.batchsize = self.e_op.batchsize
+    self.train_stop_steps = sys.maxint
 
   def SetLayerAndEdgeClass(self):
     self.LayerClass = Layer
@@ -69,7 +85,10 @@ class NeuralNet(object):
   def LoadModelOnGPU(self, batchsize=-1):
     """Load the model on the GPU."""
     if batchsize < 0:
-      batchsize=self.t_op.batchsize
+      if self.t_op:
+        batchsize=self.t_op.batchsize
+      else:
+        batchsize=self.e_op.batchsize
 
     for layer in self.net.layer:
       hyp = deepnet_pb2.Hyperparams()
@@ -105,9 +124,10 @@ class NeuralNet(object):
                     m.node2.incoming_edge, True):
             S.append(m.node2)
     if reduce(lambda a, edge: a and edge.marker == 1, self.edge, True):
-      print 'Fprop Order:'
-      for node in node_list:
-        print node.name
+      if self.verbose:
+        print 'Fprop Order:'
+        for node in node_list:
+          print node.name
     else:
       raise Exception('Invalid net for backprop. Cycle exists.')
     return node_list
@@ -120,8 +140,12 @@ class NeuralNet(object):
         evaluation.
       step: Training step.
     """
+    losses = []
     for node in self.node_list:
-      node.ComputeUp(train, step, self.train_stop_steps)
+      loss = node.ComputeUp(train, step, self.train_stop_steps)
+      if loss:
+        losses.append(loss)
+    return losses
 
   def BackwardPropagate(self, step):
     """Backprop through the network.
@@ -129,12 +153,12 @@ class NeuralNet(object):
     Args:
       step: Training step.
     """
-    loss_list = []
+    losses = []
     for node in reversed(self.node_list):
       loss = node.ComputeDown(step)
       if loss:
-        loss_list.append(loss)
-    return loss_list
+        losses.append(loss)
+    return losses
 
   def TrainOneBatch(self, step):
     """Train once on one mini-batch.
@@ -144,37 +168,44 @@ class NeuralNet(object):
     Returns:
       List of losses incurred at each output layer.
     """
-    self.ForwardPropagate(train=True)
-    losses = self.BackwardPropagate(step)
-    return losses
+    losses1 = self.ForwardPropagate(train=True)
+    losses2 = self.BackwardPropagate(step)
+    losses1.extend(losses2)
+    return losses1
 
   def EvaluateOneBatch(self):
     """Evaluate one mini-batch."""
-    self.ForwardPropagate()
-    return [node.GetLoss() for node in self.output_datalayer]
+    losses = self.ForwardPropagate()
+    losses.extend([node.GetLoss() for node in self.output_datalayer])
+    return losses
 
-  def Evaluate(self, validation=True):
+  def Evaluate(self, validation=True, collect_predictions=False):
     """Evaluate the model.
     Args:
       validation: If True, evaluate on the validation set,
         else evaluate on test set.
+      collect_predictions: If True, collect the predictions.
     """
     step = 0
     stats = []
-    collect_predictions = True
     if validation:
-      datagetter = self.GetValidationBatch
       stopcondition = self.ValidationStopCondition
+      stop = stopcondition(step)
+      if stop or self.validation_data_handler is None:
+        return
+      datagetter = self.GetValidationBatch
       prefix = 'V'
       stats_list = self.net.validation_stats
-      num_batches = self.input_datalayer[0].validation_data_handler.num_batches
+      num_batches = self.validation_data_handler.num_batches
     else:
-      datagetter = self.GetTestBatch
       stopcondition = self.TestStopCondition
+      stop = stopcondition(step)
+      if stop or self.test_data_handler is None:
+        return
+      datagetter = self.GetTestBatch
       prefix = 'E'
       stats_list = self.net.test_stats
-      num_batches = self.input_datalayer[0].test_data_handler.num_batches
-    stop = stopcondition(0)
+      num_batches = self.test_data_handler.num_batches
     if collect_predictions:
       output_layer = self.output_datalayer[0]
       collect_pos = 0
@@ -200,7 +231,6 @@ class NeuralNet(object):
       step += 1
       stop = stopcondition(step)
     if collect_predictions and stats:
-      #import pdb; pdb.set_trace()
       MAP, prec50, MAP_list, prec50_list = self.ComputeScore(predictions, targets)
       stat = stats[0]
       stat.MAP = MAP
@@ -240,6 +270,41 @@ class NeuralNet(object):
     prec /= numdims
     return ap, prec, ap_list, prec_list
 
+  def WriteRepresentationToDisk(self, layernames, output_dir, memory='1G',
+                                dataset='test', drop=False):
+    layers = [self.GetLayerByName(lname) for lname in layernames]
+    numdim_list = [layer.state.shape[0] for layer in layers]
+    if dataset == 'train':
+      datagetter = self.GetTrainBatch
+      if self.train_data_handler is None:
+        return
+      numbatches = self.train_data_handler.num_batches
+      size = numbatches * self.train_data_handler.batchsize
+    elif dataset == 'validation':
+      datagetter = self.GetValidationBatch
+      if self.validation_data_handler is None:
+        return
+      numbatches = self.validation_data_handler.num_batches
+      size = numbatches * self.validation_data_handler.batchsize
+    elif dataset == 'test':
+      datagetter = self.GetTestBatch
+      if self.test_data_handler is None:
+        return
+      numbatches = self.test_data_handler.num_batches
+      size = numbatches * self.test_data_handler.batchsize
+    datawriter = DataWriter(layernames, output_dir, memory, numdim_list, size)
+
+    for batch in range(numbatches):
+      datagetter()
+      sys.stdout.write('\r%d' % (batch+1))
+      sys.stdout.flush()
+      self.ForwardPropagate(train=drop)
+      reprs = [l.state.asarray().T for l in layers]
+      datawriter.Submit(reprs)
+    sys.stdout.write('\n')
+    datawriter.Commit()
+    return size
+
   def TrainStopCondition(self, step):
     return step >= self.train_stop_steps
 
@@ -258,6 +323,13 @@ class NeuralNet(object):
   def ShowNow(self, step):
     return self.show_now_steps > 0 and step % self.show_now_steps == 0
 
+  def GetLayerByName(self, layername, down=False):
+    try:
+      l = next(l for l in self.layer if l.name == layername)
+    except StopIteration:
+      l = None
+    return l
+
   def Save(self):
     for layer in self.layer:
       layer.SaveParameters()
@@ -265,91 +337,90 @@ class NeuralNet(object):
       edge.SaveParameters()
     util.WriteCheckpointFile(self)
 
+  def ResetBatchsize(self, batchsize):
+    for layer in self.layer:
+      layer.AllocateBatchsizeDependentMemory(batchsize)
+    for edge in self.edge:
+      edge.AllocateBatchsizeDependentMemory()
+
   def GetTrainBatch(self):
-    for layer in self.input_datalayer:
-      layer.GetTrainData()
-    for layer in self.output_datalayer:
-      layer.GetTrainData()
+    data_list = self.train_data_handler.Get()
+    if data_list[0].shape[1] != self.batchsize:
+      self.ResetBatchsize(data_list[0].shape[1])
+    for i, layer in enumerate(self.datalayer):
+      layer.SetData(data_list[i])
+    for layer in self.tied_datalayer:
+      layer.SetData(layer.tied_to.data)
 
   def GetValidationBatch(self):
-    for layer in self.input_datalayer:
-      layer.GetValidationData()
-    for layer in self.output_datalayer:
-      layer.GetValidationData()
+    data_list = self.validation_data_handler.Get()
+    if data_list[0].shape[1] != self.batchsize:
+      self.ResetBatchsize(data_list[0].shape[1])
+    for i, layer in enumerate(self.datalayer):
+      layer.SetData(data_list[i])
+    for layer in self.tied_datalayer:
+      layer.SetData(layer.tied_to.data)
 
   def GetTestBatch(self):
-    for layer in self.input_datalayer:
-      layer.GetTestData()
-    for layer in self.output_datalayer:
-      layer.GetTestData()
+    data_list = self.test_data_handler.Get()
+    if data_list[0].shape[1] != self.batchsize:
+      self.ResetBatchsize(data_list[0].shape[1])
+    for i, layer in enumerate(self.datalayer):
+      layer.SetData(data_list[i])
+    for layer in self.tied_datalayer:
+      layer.SetData(layer.tied_to.data)
 
-  def SetUpData(self, train_link=None, valid_link=None, test_link=None):
-    """Setup the data.
-
-    Sets up data handlers. The optional links are other previously created data
-    handlers that must be tied to the new data handlers.
-    """
-    data = util.ReadData(self.t_op.data_proto)
+  def SetUpData(self, skip_outputs=False):
+    """Setup the data."""
+    hyp_list = []
+    name_list = [[], [], []]
     for node in self.layer:
-      if not node.proto.HasField('data_field'):
+      if not (node.is_input or node.is_output):
+        continue
+      if skip_outputs and node.is_output:
         continue
       data_field = node.proto.data_field
       if data_field.tied:
-        layer_tied_to = next(l for l in self.layer\
-                             if l.name == data_field.tied_to)
-        print 'Layer %s is tied to %s' % (node.name, layer_tied_to.name)
-        node.SetDataHandles(tied_to=layer_tied_to)
+        self.tied_datalayer.append(node)
+        node.tied_to = next(l for l in self.datalayer\
+                            if l.name == data_field.tied_to)
       else:
+        self.datalayer.append(node)
+        hyp_list.append(node.hyperparams)
         if data_field.train:
-          train_data = DataHandle(
-            data_field.train,
-            next(d for d in data.data if d.name == data_field.train),
-            self.t_op, node.hyperparams, permutation_link=train_link)
-        else:
-          train_data = None
+          name_list[0].append(data_field.train)
         if data_field.validation:
-          validation_data = DataHandle(
-            data_field.validation,
-            next(d for d in data.data if d.name == data_field.validation),
-            self.e_op, node.hyperparams, permutation_link=valid_link)
-        else:
-          validation_data = None
+          name_list[1].append(data_field.validation)
         if data_field.test:
-          test_data = DataHandle(
-            data_field.test,
-            next(d for d in data.data if d.name == data_field.test),
-            self.e_op, node.hyperparams, permutation_link=test_link)
-        else:
-          test_data = None
-        if train_link is None:
-          train_link = train_data
-        if valid_link is None:
-          valid_link = validation_data
-        if test_link is None:
-          test_link = test_data
-        node.SetDataHandles(train=train_data, valid=validation_data,
-                            test=test_data)
-    return train_link, valid_link, test_link
+          name_list[2].append(data_field.test)
+    if self.t_op:
+      op = self.t_op
+    else:
+      op = self.e_op
+    handles = GetDataHandles(op, name_list, hyp_list,
+                             verbose=self.verbose)
+    self.train_data_handler = handles[0]
+    self.validation_data_handler = handles[1]
+    self.test_data_handler = handles[2]
 
-
-  def SetUpTrainer(self, *args):
+  def SetUpTrainer(self):
     """Load the model, setup the data, set the stopping conditions."""
     self.LoadModelOnGPU()
-    #self.PrintNetwork()
-    args = self.SetUpData(*args)
-    data_layer = self.input_datalayer[0]
+    if self.verbose:
+      self.PrintNetwork()
+    self.SetUpData()
     if self.t_op.stopcondition.all_processed:
-      num_steps = data_layer.train_data_handler.num_batches
+      num_steps = self.train_data_handler.num_batches
     else:
       num_steps = self.t_op.stopcondition.steps
     self.train_stop_steps = num_steps
-    if self.e_op.stopcondition.all_processed and data_layer.validation_data_handler:
-      num_steps = data_layer.validation_data_handler.num_batches
+    if self.e_op.stopcondition.all_processed and self.validation_data_handler:
+      num_steps = self.validation_data_handler.num_batches
     else:
       num_steps = self.e_op.stopcondition.steps
     self.validation_stop_steps = num_steps
-    if self.e_op.stopcondition.all_processed and data_layer.test_data_handler:
-      num_steps = data_layer.test_data_handler.num_batches
+    if self.e_op.stopcondition.all_processed and self.test_data_handler:
+      num_steps = self.test_data_handler.num_batches
     else:
       num_steps = self.e_op.stopcondition.steps
     self.test_stop_steps = num_steps
@@ -357,7 +428,6 @@ class NeuralNet(object):
     self.eval_now_steps = self.t_op.eval_after
     self.save_now_steps = self.t_op.checkpoint_after
     self.show_now_steps = self.t_op.show_after
-    return args
 
   def Show(self):
     """Visualize the state of the layers and edges in the network."""
@@ -368,6 +438,8 @@ class NeuralNet(object):
 
   def Train(self):
     """Train the model."""
+    assert self.t_op is not None, 't_op is None.'
+    assert self.e_op is not None, 'e_op is None.'
     self.SetUpTrainer()
     step = self.t_op.current_step
     stop = self.TrainStopCondition(step)
@@ -383,20 +455,26 @@ class NeuralNet(object):
       else:
         stats = losses
       step += 1
-      if self.ShowNow(step):
-        self.Show()
       if self.EvalNow(step):
         # Print out training stats.
         sys.stdout.write('\rStep %d ' % step)
         for stat in stats:
           sys.stdout.write(GetPerformanceStats(stat, prefix='T'))
-          self.net.train_stats.extend(stats)
-          stats = []
+        self.net.train_stats.extend(stats)
+        stats = []
         # Evaluate on validation set.
         self.Evaluate(validation=True)
         # Evaluate on test set.
         self.Evaluate(validation=False)
+        """
+        p = self.layer[0].params['precision'].asarray()
+        sys.stdout.write(' prec: %.4f %.4f' % (p.max(), p.min()))
+        b = self.layer[0].params['bias'].asarray()
+        sys.stdout.write(' bias: %.4f %.4f' % (b.max(), b.min()))
+        """
         sys.stdout.write('\n')
+        if self.ShowNow(step):
+          self.Show()
       if self.SaveNow(step):
         self.t_op.current_step = step
         self.Save()

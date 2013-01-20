@@ -24,12 +24,12 @@ _dev_prefix = '/dev/nvidia'
 # a quick and dirty way that works for now:
 def board_ids():
     """Returns integer board ids available on this machine."""
-    from glob import glob
-    board_devs = glob(_dev_prefix + '[0-9]*')
-    return range(len(board_devs))
-    #p = Popen(['/u/tang/bin/get_num_gpu_boards'], stdout=PIPE)    
-    #nBoards = int(p.stdout.read())
-    #return range(nBoards)
+    #from glob import glob
+    #board_devs = glob(_dev_prefix + '[0-9]*')
+    #return range(len(board_devs))
+    p = Popen(['/u/tang/bin/get_num_gpu_boards'], stdout=PIPE)    
+    nBoards = int(p.stdout.read())
+    return range(nBoards)
 
 def _lock_file(id):
     """lock file from integer id"""

@@ -1,13 +1,13 @@
 optimizer : CD
 stopcondition {
   all_processed: false
-  steps: 600000
+  steps: 100000
 }
 train: true 
 batchsize: 100
 data_proto: "/ais/gobi3/u/nitish/mnist/mnist.pbtxt"
-eval_after: 600
-checkpoint_after: 100000
+eval_after: 1000
+checkpoint_after: 10000
 checkpoint_directory: "/ais/gobi3/u/nitish/mnist/models"
-show_after: 0
+show_after: 1000
 randomize: true

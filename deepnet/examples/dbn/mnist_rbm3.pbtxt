@@ -1,0 +1,130 @@
+name: "mnist_dbn3"
+model_type: DBN
+hyperparams {
+  base_epsilon: 0.01
+  epsilon_decay : NONE
+  epsilon_decay_half_life : 5000
+  initial_momentum : 0.5
+  final_momentum : 0.9
+  momentum_change_steps : 3000
+  sparsity : true
+  sparsity_target : 0.05
+  sparsity_cost : 0.01
+  sparsity_damping : 0.9
+  dropout : false
+  dropout_prob : 0.5
+  apply_weight_norm : false
+  weight_norm : 3
+  apply_l2_decay: true
+  l2_decay: 0.001
+  activation: LOGISTIC
+  gibbs_steps: 1
+  mf_steps: 1
+}
+
+layer {
+  name: "input_layer"
+  dimensions: 784
+  shape:28
+  shape:28
+  is_input: true
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  data_field {
+    train: "train_full_data"
+    test: "test_data"
+  }
+  param {
+    name: "bias_generative"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
+    pretrained_model_param_name: "bias"
+  }
+}
+
+layer {
+  name: "hidden1"
+  dimensions: 1024
+  shape: 32
+  shape: 32
+  param {
+    name: "bias_generative"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_dbn2_rbm_LAST"
+  }
+  param {
+    name: "bias"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
+  }
+}
+layer {
+  name: "hidden2"
+  dimensions: 1024
+  shape: 32
+  shape: 16
+  param {
+    name: "bias_generative"
+    initialization: CONSTANT
+  }
+  param {
+    name: "bias"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_dbn2_rbm_LAST"
+  }
+  loss_function: SQUARED_LOSS
+  performance_stats {
+    compute_error: true
+  }
+}
+layer {
+  name: "hidden3"
+  dimensions: 2048
+  shape: 32
+  shape: 64
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  performance_stats {
+    compute_sparsity: true
+  }
+}
+
+
+edge {
+  node1: "hidden1"
+  node2: "input_layer"
+  receptive_field_width: 28
+  display_rows: 32
+  display_cols: 32
+  param {
+    name: "weight"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
+    transpose_pretrained: true
+  }
+}
+edge {
+  node1: "hidden2"
+  node2: "hidden1"
+  param {
+    name: "weight"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_dbn2_rbm_LAST"
+    transpose_pretrained: true
+  }
+}
+
+edge {
+  node1: "hidden2"
+  node2: "hidden3"
+  directed: false
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma : 1.0
+  }
+}

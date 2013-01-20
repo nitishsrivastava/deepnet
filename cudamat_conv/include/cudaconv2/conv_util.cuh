@@ -31,16 +31,16 @@
 #include "cudamat.cuh"
 
 void convLocalMaxUndo(NVMatrix& images, NVMatrix& maxGrads, NVMatrix& maxActs, NVMatrix& target,
+                      int subsX, int startX, int strideX, int outputsX, float scaleTargets, float scaleOutput);
+void convLocalMaxUndo(NVMatrix& images, NVMatrix& maxGrads, NVMatrix& maxActs, NVMatrix& target,
                       int subsX, int startX, int strideX, int outputsX);
-void convLocalAvgUndo(NVMatrix& avgGrads, NVMatrix& target,
-                      int subsX, int startX, int strideX, int outputsX, int imgSize);
-
 void convLocalAvgUndo(NVMatrix& avgGrads, NVMatrix& target,
                       int subsX, int startX, int strideX, int outputsX, int imgSize,
                       float scaleTargets, float scaleOutput);
+void convLocalAvgUndo(NVMatrix& avgGrads, NVMatrix& target,
+                      int subsX, int startX, int strideX, int outputsX, int imgSize);
+
 void convLocalMaxUndoCu(cudamat* images, cudamat* maxGrads, cudamat* maxActs, cudamat* target,
-                      int subsX, int startX, int strideX, int outputsX, float scaleTargets, float scaleOutput);
-void convLocalMaxUndo(NVMatrix& images, NVMatrix& maxGrads, NVMatrix& maxActs, NVMatrix& target,
                       int subsX, int startX, int strideX, int outputsX, float scaleTargets, float scaleOutput);
 void convLocalAvgUndoCu(cudamat* avgGrads, cudamat* target,
                         int subsX, int startX, int strideX, int outputsX, int imgSize,
@@ -48,9 +48,17 @@ void convLocalAvgUndoCu(cudamat* avgGrads, cudamat* target,
 
 void convResponseNorm(NVMatrix& images, NVMatrix& denoms, NVMatrix& target, int numFilters, int sizeX, float addScale, float powScale);
 void convResponseNormUndo(NVMatrix& outGrads, NVMatrix& denoms, NVMatrix& inputs, NVMatrix& acts, NVMatrix& target, int numFilters,
-                         int sizeX, float addScale, float powScale, float scaleTargets, float scaleOutput);
+                          int sizeX, float addScale, float powScale, float scaleTargets, float scaleOutput);
+void convResponseNormCu(cudamat* images, cudamat* denoms, cudamat* target, int numFilters, int sizeX, float addScale, float powScale);
+void convResponseNormUndoCu(cudamat* outGrads, cudamat* denoms, cudamat* inputs, cudamat* acts, cudamat* target, int numFilters,
+                            int sizeX, float addScale, float powScale, float scaleTargets, float scaleOutput);
+
 void convContrastNorm(NVMatrix& images, NVMatrix& meanDiffs, NVMatrix& denoms, NVMatrix& target, int numFilters, int sizeX, float addScale, float powScale);
 void convContrastNormUndo(NVMatrix& outGrads, NVMatrix& denoms, NVMatrix& meanDiffs, NVMatrix& acts, NVMatrix& target, int numFilters,
+                         int sizeX, float addScale, float powScale, float scaleTargets, float scaleOutput);
+
+void convContrastNormCu(cudamat* images, cudamat* meanDiffs, cudamat* denoms, cudamat* target, int numFilters, int sizeX, float addScale, float powScale);
+void convContrastNormUndoCu(cudamat* outGrads, cudamat* denoms, cudamat* meanDiffs, cudamat* acts, cudamat* target, int numFilters,
                          int sizeX, float addScale, float powScale, float scaleTargets, float scaleOutput);
 
 void convGaussianBlur(NVMatrix& images, NVMatrix& filter, NVMatrix& target, bool horiz, int numChannels,

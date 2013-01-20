@@ -11,13 +11,19 @@ hyperparams {
   sparsity_target : 0.1
   sparsity_cost : 0.001
   sparsity_damping : 0.9
+  #dropout : true
+  dropout : false
+  dropout_prob : 0.5
+  apply_weight_norm : false
+  weight_norm : 3
   apply_l2_decay: true
-  l2_decay: 0.0001
+  l2_decay: 0.001
   activation: RECTIFIED_LINEAR
+  enable_display: false
 }
 
 layer {
-  name: "input layer"
+  name: "input_layer"
   dimensions: 784
   shape:28
   shape:28
@@ -29,6 +35,8 @@ layer {
   }
   hyperparams {
     activation: LOGISTIC
+    enable_display: false
+    dropout_prob: 0.0
   }
 }
 
@@ -41,7 +49,7 @@ layer {
   }
 }
 layer {
-  name: "output layer"
+  name: "output_layer"
   dimensions: 784
   param {
     name: "bias"
@@ -50,19 +58,22 @@ layer {
   hyperparams{
     dropout: false
     activation: LOGISTIC
+    enable_display: false
   }
   is_output: true
   loss_function: SQUARED_LOSS
   data_field {
     tied: true
-    tied_to: "input layer"
+    tied_to: "input_layer"
   }
   performance_stats {
+    compute_cross_entropy: false
+    compute_correct_preds: false
     compute_error: true
   }
 }
 edge {
-  node1: "input layer"
+  node1: "input_layer"
   node2: "hidden1"
   receptive_field_width: 28
   display_rows: 16
@@ -75,10 +86,13 @@ edge {
 }
 edge {
   node1: "hidden1"
-  node2: "output layer"
+  node2: "output_layer"
   param {
     name: "weight"
     initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
     sigma : 1.0
+  }
+  hyperparams {
+    enable_display: false
   }
 }

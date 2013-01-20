@@ -1,0 +1,139 @@
+name: "mnist_autoencoder_relu_2layer"
+model_type: FEED_FORWARD_NET
+hyperparams {
+  base_epsilon: 0.01
+  epsilon_decay : INVERSE_T
+  epsilon_decay_half_life : 10000
+  initial_momentum : 0.5
+  final_momentum : 0.9
+  momentum_change_steps : 50000
+  sparsity : false
+  sparsity_target : 0.1
+  sparsity_cost : 0.001
+  sparsity_damping : 0.9
+  #dropout : true
+  dropout : false
+  dropout_prob : 0.5
+  apply_weight_norm : false
+  weight_norm : 3
+  apply_l2_decay: true
+  l2_decay: 0.0001
+  activation: RECTIFIED_LINEAR
+  enable_display: false
+}
+
+layer {
+  name: "input_layer"
+  dimensions: 784
+  shape:28
+  shape:28
+  is_input: true
+  data_field {
+    train: "train_data"
+    validation: "validation_data"
+    test: "test_data"
+  }
+  hyperparams {
+    activation: LOGISTIC
+  }
+}
+
+layer {
+  name: "hidden1"
+  dimensions: 256
+  param {
+    name: "bias"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_autoencoder_relu_LAST"
+  }
+}
+
+layer {
+  name: "hidden2"
+  dimensions: 128
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+
+layer {
+  name: "hidden3"
+  dimensions: 256
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+
+layer {
+  name: "output_layer"
+  dimensions: 784
+  param {
+    name: "bias"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_autoencoder_relu_LAST"
+  }
+  hyperparams{
+    dropout: false
+    activation: LOGISTIC
+  }
+  is_output: true
+  loss_function: SQUARED_LOSS
+  data_field {
+    tied: true
+    tied_to: "input_layer"
+  }
+  performance_stats {
+    compute_cross_entropy: false
+    compute_correct_preds: false
+    compute_error: true
+  }
+}
+edge {
+  node1: "input_layer"
+  node2: "hidden1"
+  receptive_field_width: 28
+  display_rows: 16
+  display_cols: 16
+  param {
+    name: "weight"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_autoencoder_relu_LAST"
+  }
+  hyperparams {
+    enable_display: false
+  }
+}
+
+edge {
+  node1: "hidden1"
+  node2: "hidden2"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma : 1.0
+  }
+}
+edge {
+  node1: "hidden2"
+  node2: "hidden3"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma : 1.0
+  }
+}
+
+edge {
+  node1: "hidden3"
+  node2: "output_layer"
+  param {
+    name: "weight"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_autoencoder_relu_LAST"
+    pretrained_model_node1: "hidden1"
+    pretrained_model_node2: "output_layer"
+  }
+}
+

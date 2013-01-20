@@ -11,7 +11,7 @@ from google.protobuf import descriptor_pb2
 DESCRIPTOR = descriptor.FileDescriptor(
   name='deepnet.proto',
   package='deepnet',
-  serialized_pb='\n\rdeepnet.proto\x12\x07\x64\x65\x65pnet\"\xbf\x04\n\x05Layer\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x14\n\x0c\x66ile_pattern\x18\x02 \x01(\t\x12\x12\n\ndimensions\x18\x03 \x02(\x05\x12\x14\n\tnumlabels\x18\x04 \x01(\x05:\x01\x31\x12!\n\x05param\x18\x05 \x03(\x0b\x32\x12.deepnet.Parameter\x12\x17\n\x08is_input\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x18\n\tis_output\x18\x08 \x01(\x08:\x05\x66\x61lse\x12@\n\rloss_function\x18\t \x01(\x0e\x32\x1b.deepnet.Layer.LossFunction:\x0cSQUARED_LOSS\x12)\n\x0bhyperparams\x18\n \x01(\x0b\x32\x14.deepnet.Hyperparams\x12,\n\ndata_field\x18\x0b \x01(\x0b\x32\x18.deepnet.Layer.DataField\x12+\n\x11performance_stats\x18\x0c \x01(\x0b\x32\x10.deepnet.Metrics\x12\r\n\x05shape\x18\r \x03(\x05\x1a\x85\x01\n\tDataField\x12\r\n\x05train\x18\x01 \x01(\t\x12\x12\n\nvalidation\x18\x02 \x01(\t\x12\x0c\n\x04test\x18\x03 \x01(\t\x12\r\n\x05model\x18\x04 \x01(\t\x12\x12\n\nlayer_name\x18\x05 \x01(\t\x12\x13\n\x04tied\x18\x06 \x01(\x08:\x05\x66\x61lse\x12\x0f\n\x07tied_to\x18\x07 \x01(\t\"3\n\x0cLossFunction\x12\x10\n\x0cSQUARED_LOSS\x10\x00\x12\x11\n\rCROSS_ENTROPY\x10\x01\"\xdd\x05\n\tParameter\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x0b\n\x03mat\x18\x02 \x01(\x0c\x12\x12\n\ndimensions\x18\x03 \x03(\x05\x12\x43\n\x0einitialization\x18\x04 \x01(\x0e\x32!.deepnet.Parameter.Initialization:\x08\x43ONSTANT\x12\x14\n\x05sigma\x18\x05 \x01(\x02:\x05\x30.001\x12\x13\n\x08\x63onstant\x18\x06 \x01(\x02:\x01\x30\x12\x13\n\x04\x63onv\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x33\n\x0b\x63onv_params\x18\x08 \x01(\x0b\x32\x1e.deepnet.Parameter.Convolution\x12\x18\n\x10pretrained_model\x18\t \x03(\t\x12\x1e\n\x16pretrained_model_node1\x18\n \x01(\t\x12\x1e\n\x16pretrained_model_node2\x18\x0b \x01(\t\x12#\n\x14transpose_pretrained\x18\x0c \x01(\x08:\x05\x66\x61lse\x1a\xbb\x01\n\x0b\x43onvolution\x12\x0f\n\x04size\x18\x01 \x01(\x05:\x01\x30\x12\x11\n\x06stride\x18\x02 \x01(\x05:\x01\x30\x12\x12\n\x07padding\x18\x03 \x01(\x05:\x01\x30\x12\x16\n\x0bnum_filters\x18\x04 \x01(\x05:\x01\x30\x12\x15\n\nnum_colors\x18\x05 \x01(\x05:\x01\x30\x12\x17\n\x08max_pool\x18\x06 \x01(\x08:\x05\x66\x61lse\x12\x14\n\tpool_size\x18\x07 \x01(\x05:\x01\x30\x12\x16\n\x0bpool_stride\x18\x08 \x01(\x05:\x01\x30\"\xa9\x01\n\x0eInitialization\x12\x12\n\x0e\x44\x45NSE_GAUSSIAN\x10\x00\x12\x13\n\x0fSPARSE_GAUSSIAN\x10\x01\x12\x0c\n\x08\x43ONSTANT\x10\x02\x12\x1e\n\x1a\x44\x45NSE_GAUSSIAN_SQRT_FAN_IN\x10\x03\x12\x0e\n\nPRETRAINED\x10\x04\x12\x11\n\rDENSE_UNIFORM\x10\x05\x12\x1d\n\x19\x44\x45NSE_UNIFORM_SQRT_FAN_IN\x10\x06\"\xd3\t\n\x0bHyperparams\x12\x1a\n\x0c\x62\x61se_epsilon\x18\x01 \x01(\x02:\x04\x30.01\x12\x37\n\repsilon_decay\x18\x02 \x01(\x0e\x32\x1a.deepnet.Hyperparams.Decay:\x04NONE\x12%\n\x17\x65psilon_decay_half_life\x18\x03 \x01(\x05:\x04\x31\x30\x30\x30\x12\x1b\n\x10initial_momentum\x18\x04 \x01(\x02:\x01\x30\x12\x19\n\x0e\x66inal_momentum\x18\x05 \x01(\x02:\x01\x30\x12!\n\x15momentum_change_steps\x18\x06 \x01(\x05:\x02\x31\x30\x12\x17\n\x08sparsity\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x1c\n\x0fsparsity_target\x18\x08 \x01(\x02:\x03\x30.1\x12\x1c\n\rsparsity_cost\x18\t \x01(\x02:\x05\x30.001\x12\x1d\n\x10sparsity_damping\x18\n \x01(\x02:\x03\x30.9\x12\x16\n\x07\x64ropout\x18\x0b \x01(\x08:\x05\x66\x61lse\x12\x19\n\x0c\x64ropout_prob\x18\x0c \x01(\x02:\x03\x30.5\x12 \n\x11\x61pply_weight_norm\x18\r \x01(\x08:\x05\x66\x61lse\x12\x17\n\x0bweight_norm\x18\x0e \x01(\x02:\x02\x31\x30\x12\x1d\n\x0e\x61pply_l2_decay\x18\x0f \x01(\x08:\x05\x66\x61lse\x12\x16\n\x08l2_decay\x18\x10 \x01(\x02:\x04\x30.01\x12;\n\nactivation\x18\x11 \x01(\x0e\x32\x1f.deepnet.Hyperparams.Activation:\x06LINEAR\x12\x16\n\x0bleft_window\x18\x12 \x01(\x05:\x01\x30\x12\x17\n\x0cright_window\x18\x13 \x01(\x05:\x01\x30\x12\x13\n\x08mf_steps\x18\x14 \x01(\x05:\x01\x31\x12\x16\n\x0bgibbs_steps\x18\x15 \x01(\x05:\x01\x31\x12\x1c\n\rsubtract_mean\x18\x16 \x01(\x08:\x05\x66\x61lse\x12\x1c\n\rdivide_stddev\x18\x17 \x01(\x08:\x05\x66\x61lse\x12\x33\n\x05\x61\x64\x61pt\x18\x18 \x01(\x0e\x32\x1a.deepnet.Hyperparams.Adapt:\x08NO_ADAPT\x12 \n\x15stop_dropout_for_last\x18\x19 \x01(\x05:\x01\x30\x12\x1d\n\x0e\x65nable_display\x18\x1a \x01(\x08:\x05\x66\x61lse\x12\x18\n\tnormalize\x18\x1b \x01(\x08:\x05\x66\x61lse\x12\x17\n\x0cnormalize_to\x18\x1c \x01(\x02:\x01\x31\x12\x1f\n\x14start_learning_after\x18\x1d \x01(\x05:\x01\x30\x12\x1b\n\x10step_up_cd_after\x18\x1e \x01(\x05:\x01\x30\x12\'\n\x1c\x64\x65\x63\x61y_learning_rate_for_last\x18\x1f \x01(\x05:\x01\x30\"1\n\x05\x44\x65\x63\x61y\x12\x08\n\x04NONE\x10\x00\x12\r\n\tINVERSE_T\x10\x01\x12\x0f\n\x0b\x45XPONENTIAL\x10\x02\"\x88\x01\n\nActivation\x12\n\n\x06LINEAR\x10\x00\x12\x0c\n\x08LOGISTIC\x10\x01\x12\x08\n\x04TANH\x10\x02\x12\x14\n\x10RECTIFIED_LINEAR\x10\x03\x12\x1b\n\x17RECTIFIED_LINEAR_SMOOTH\x10\x04\x12\x0b\n\x07SOFTMAX\x10\x05\x12\x16\n\x12REPLICATED_SOFTMAX\x10\x06\"/\n\x05\x41\x64\x61pt\x12\x0c\n\x08NO_ADAPT\x10\x00\x12\x0b\n\x07\x41\x44\x41GRAD\x10\x01\x12\x0b\n\x07\x41\x44\x41STAN\x10\x02\"\x8c\x02\n\x04\x45\x64ge\x12\r\n\x05node1\x18\x01 \x02(\t\x12\r\n\x05node2\x18\x02 \x02(\t\x12\x16\n\x08\x64irected\x18\x03 \x01(\x08:\x04true\x12!\n\x05param\x18\x04 \x03(\x0b\x32\x12.deepnet.Parameter\x12)\n\x0bhyperparams\x18\x05 \x01(\x0b\x32\x14.deepnet.Hyperparams\x12 \n\x15receptive_field_width\x18\x06 \x01(\x05:\x01\x31\x12\x17\n\x0c\x64isplay_rows\x18\x07 \x01(\x05:\x01\x31\x12\x17\n\x0c\x64isplay_cols\x18\x08 \x01(\x05:\x01\x31\x12\x14\n\tup_factor\x18\t \x01(\x02:\x01\x31\x12\x16\n\x0b\x64own_factor\x18\n \x01(\x02:\x01\x31\"\xcd\x03\n\x05Model\x12\x0c\n\x04name\x18\x01 \x02(\t\x12,\n\nmodel_type\x18\x02 \x02(\x0e\x32\x18.deepnet.Model.ModelType\x12\x1d\n\x05layer\x18\x03 \x03(\x0b\x32\x0e.deepnet.Layer\x12\x1b\n\x04\x65\x64ge\x18\x04 \x03(\x0b\x32\r.deepnet.Edge\x12)\n\x0bhyperparams\x18\x05 \x01(\x0b\x32\x14.deepnet.Hyperparams\x12%\n\x0btrain_stats\x18\x06 \x03(\x0b\x32\x10.deepnet.Metrics\x12*\n\x10validation_stats\x18\x07 \x03(\x0b\x32\x10.deepnet.Metrics\x12$\n\ntest_stats\x18\x08 \x03(\x0b\x32\x10.deepnet.Metrics\x12\x0f\n\x04seed\x18\t \x01(\x05:\x01\x30\x12\x13\n\x0blower_model\x18\n \x03(\t\x12\x1c\n\x14positive_phase_order\x18\x0b \x03(\t\x12\x1c\n\x14negative_phase_order\x18\x0c \x03(\t\"F\n\tModelType\x12\x14\n\x10\x46\x45\x45\x44_FORWARD_NET\x10\x00\x12\x11\n\rRECURRENT_NET\x10\x01\x12\x07\n\x03\x44\x42N\x10\x02\x12\x07\n\x03\x44\x42M\x10\x03\"\xa4\x04\n\tOperation\x12/\n\toptimizer\x18\x01 \x02(\x0e\x32\x1c.deepnet.Operation.Optimizer\x12\x37\n\rstopcondition\x18\x02 \x02(\x0b\x32 .deepnet.Operation.StopCondition\x12\x14\n\x05train\x18\x03 \x01(\x08:\x05\x66\x61lse\x12\x17\n\x0c\x63urrent_step\x18\x04 \x01(\x05:\x01\x30\x12\x14\n\tbatchsize\x18\x05 \x01(\x05:\x01\x31\x12\x12\n\ndata_proto\x18\x06 \x02(\t\x12\x15\n\neval_after\x18\x07 \x01(\x05:\x01\x31\x12\x1b\n\x10\x63heckpoint_after\x18\x08 \x01(\x05:\x01\x31\x12\x36\n\x14\x63heckpoint_directory\x18\t \x01(\t:\x18/ais/gobi3/u/nitish/tmp/\x12\x1d\n\x0fskip_last_piece\x18\n \x01(\x08:\x04true\x12\x18\n\trandomize\x18\x0e \x01(\x08:\x05\x66\x61lse\x12\x15\n\nshow_after\x18\x0f \x01(\x05:\x01\x30\x1a?\n\rStopCondition\x12\x1c\n\rall_processed\x18\x01 \x01(\x08:\x05\x66\x61lse\x12\x10\n\x05steps\x18\x02 \x01(\x05:\x01\x30\"W\n\tOptimizer\x12\x14\n\x10GRADIENT_DESCENT\x10\x00\x12\x0b\n\x07\x41\x44\x41GRAD\x10\x01\x12\x0b\n\x07\x41\x44\x41STAN\x10\x02\x12\t\n\x05LBFGS\x10\x03\x12\x06\n\x02\x43\x44\x10\x04\x12\x07\n\x03PCD\x10\x05\"\xf4\x02\n\x07Metrics\x12\x10\n\x05\x63ount\x18\x01 \x01(\x05:\x01\x30\x12\x15\n\rcorrect_preds\x18\x02 \x01(\x02\x12$\n\x15\x63ompute_correct_preds\x18\x03 \x01(\x08:\x05\x66\x61lse\x12\x15\n\rcross_entropy\x18\x04 \x01(\x02\x12$\n\x15\x63ompute_cross_entropy\x18\x05 \x01(\x08:\x05\x66\x61lse\x12\r\n\x05\x65rror\x18\x06 \x01(\x02\x12\x1c\n\rcompute_error\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x0b\n\x03MAP\x18\x08 \x01(\x02\x12\x1a\n\x0b\x63ompute_MAP\x18\t \x01(\x08:\x05\x66\x61lse\x12\x0e\n\x06prec50\x18\n \x01(\x02\x12\x1d\n\x0e\x63ompute_prec50\x18\x0b \x01(\x08:\x05\x66\x61lse\x12\x10\n\x08MAP_list\x18\x0c \x03(\x02\x12\x13\n\x0bprec50_list\x18\r \x03(\x02\x12\x10\n\x08sparsity\x18\x0e \x01(\x02\x12\x1f\n\x10\x63ompute_sparsity\x18\x0f \x01(\x08:\x05\x66\x61lse\"\x89\x03\n\x07\x44\x61taset\x12#\n\x04\x64\x61ta\x18\x01 \x03(\x0b\x32\x15.deepnet.Dataset.Data\x12\x0c\n\x04name\x18\x02 \x02(\t\x1a\xca\x02\n\x04\x44\x61ta\x12\x14\n\x0c\x66ile_pattern\x18\x01 \x02(\t\x12\x0c\n\x04size\x18\x02 \x02(\x05\x12\x12\n\ndimensions\x18\x03 \x03(\x05\x12\x12\n\nnum_labels\x18\x04 \x01(\x05\x12\x0b\n\x03key\x18\x05 \x03(\t\x12\x18\n\ngpu_memory\x18\x06 \x01(\t:\x04\x35\x30\x30M\x12\x17\n\x0bmain_memory\x18\x07 \x01(\t:\x02\x32G\x12\x1c\n\rmean_centered\x18\x08 \x01(\x08:\x05\x66\x61lse\x12\x1c\n\runit_variance\x18\t \x01(\x08:\x05\x66\x61lse\x12\x0c\n\x04mean\x18\n \x01(\x0c\x12\x0e\n\x06stddev\x18\x0b \x01(\x0c\x12\x0c\n\x04name\x18\x0c \x02(\t\x12\x15\n\x06sparse\x18\r \x01(\x08:\x05\x66\x61lse\x12\x12\n\x03seq\x18\x0e \x01(\x08:\x05\x66\x61lse\x12#\n\x0b\x64\x61ta_format\x18\x0f \x01(\t:\x0eprotocolbuffer')
+  serialized_pb='\n\rdeepnet.proto\x12\x07\x64\x65\x65pnet\"\xbf\x04\n\x05Layer\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x14\n\x0c\x66ile_pattern\x18\x02 \x01(\t\x12\x12\n\ndimensions\x18\x03 \x02(\x05\x12\x14\n\tnumlabels\x18\x04 \x01(\x05:\x01\x31\x12!\n\x05param\x18\x05 \x03(\x0b\x32\x12.deepnet.Parameter\x12\x17\n\x08is_input\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x18\n\tis_output\x18\x08 \x01(\x08:\x05\x66\x61lse\x12@\n\rloss_function\x18\t \x01(\x0e\x32\x1b.deepnet.Layer.LossFunction:\x0cSQUARED_LOSS\x12)\n\x0bhyperparams\x18\n \x01(\x0b\x32\x14.deepnet.Hyperparams\x12,\n\ndata_field\x18\x0b \x01(\x0b\x32\x18.deepnet.Layer.DataField\x12+\n\x11performance_stats\x18\x0c \x01(\x0b\x32\x10.deepnet.Metrics\x12\r\n\x05shape\x18\r \x03(\x05\x1a\x85\x01\n\tDataField\x12\r\n\x05train\x18\x01 \x01(\t\x12\x12\n\nvalidation\x18\x02 \x01(\t\x12\x0c\n\x04test\x18\x03 \x01(\t\x12\r\n\x05model\x18\x04 \x01(\t\x12\x12\n\nlayer_name\x18\x05 \x01(\t\x12\x13\n\x04tied\x18\x06 \x01(\x08:\x05\x66\x61lse\x12\x0f\n\x07tied_to\x18\x07 \x01(\t\"3\n\x0cLossFunction\x12\x10\n\x0cSQUARED_LOSS\x10\x00\x12\x11\n\rCROSS_ENTROPY\x10\x01\"\x8f\x07\n\tParameter\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x0b\n\x03mat\x18\x02 \x01(\x0c\x12\x12\n\ndimensions\x18\x03 \x03(\x05\x12\x43\n\x0einitialization\x18\x04 \x01(\x0e\x32!.deepnet.Parameter.Initialization:\x08\x43ONSTANT\x12\x14\n\x05sigma\x18\x05 \x01(\x02:\x05\x30.001\x12\x13\n\x08\x63onstant\x18\x06 \x01(\x02:\x01\x30\x12\x13\n\x04\x63onv\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x33\n\x0b\x63onv_params\x18\x08 \x01(\x0b\x32\x1e.deepnet.Parameter.Convolution\x12\x18\n\x10pretrained_model\x18\t \x03(\t\x12\x1e\n\x16pretrained_model_node1\x18\n \x01(\t\x12\x1e\n\x16pretrained_model_node2\x18\x0b \x01(\t\x12#\n\x14transpose_pretrained\x18\x0c \x01(\x08:\x05\x66\x61lse\x12#\n\x1bpretrained_model_param_name\x18\r \x01(\t\x12\x14\n\x05local\x18\x0e \x01(\x08:\x05\x66\x61lse\x12\x16\n\x0bmult_factor\x18\x0f \x01(\x02:\x01\x31\x1a\x9a\x02\n\x0b\x43onvolution\x12\x0f\n\x04size\x18\x01 \x01(\x05:\x01\x30\x12\x11\n\x06stride\x18\x02 \x01(\x05:\x01\x30\x12\x12\n\x07padding\x18\x03 \x01(\x05:\x01\x30\x12\x16\n\x0bnum_filters\x18\x04 \x01(\x05:\x01\x30\x12\x15\n\nnum_colors\x18\x05 \x01(\x05:\x01\x30\x12\x17\n\x08max_pool\x18\x06 \x01(\x08:\x05\x66\x61lse\x12\x14\n\tpool_size\x18\x07 \x01(\x05:\x01\x30\x12\x16\n\x0bpool_stride\x18\x08 \x01(\x05:\x01\x30\x12\x14\n\x05rnorm\x18\t \x01(\x08:\x05\x66\x61lse\x12\x14\n\tnorm_size\x18\n \x01(\x05:\x01\x30\x12\x17\n\tpow_scale\x18\x0b \x01(\x02:\x04\x30.75\x12\x18\n\tadd_scale\x18\x0c \x01(\x02:\x05\x30.001\"\xa9\x01\n\x0eInitialization\x12\x12\n\x0e\x44\x45NSE_GAUSSIAN\x10\x00\x12\x13\n\x0fSPARSE_GAUSSIAN\x10\x01\x12\x0c\n\x08\x43ONSTANT\x10\x02\x12\x1e\n\x1a\x44\x45NSE_GAUSSIAN_SQRT_FAN_IN\x10\x03\x12\x0e\n\nPRETRAINED\x10\x04\x12\x11\n\rDENSE_UNIFORM\x10\x05\x12\x1d\n\x19\x44\x45NSE_UNIFORM_SQRT_FAN_IN\x10\x06\"\xb7\x0b\n\x0bHyperparams\x12\x1a\n\x0c\x62\x61se_epsilon\x18\x01 \x01(\x02:\x04\x30.01\x12\x37\n\repsilon_decay\x18\x02 \x01(\x0e\x32\x1a.deepnet.Hyperparams.Decay:\x04NONE\x12%\n\x17\x65psilon_decay_half_life\x18\x03 \x01(\x05:\x04\x31\x30\x30\x30\x12\x1b\n\x10initial_momentum\x18\x04 \x01(\x02:\x01\x30\x12\x19\n\x0e\x66inal_momentum\x18\x05 \x01(\x02:\x01\x30\x12!\n\x15momentum_change_steps\x18\x06 \x01(\x05:\x02\x31\x30\x12\x17\n\x08sparsity\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x1c\n\x0fsparsity_target\x18\x08 \x01(\x02:\x03\x30.1\x12\x1c\n\rsparsity_cost\x18\t \x01(\x02:\x05\x30.001\x12\x1d\n\x10sparsity_damping\x18\n \x01(\x02:\x03\x30.9\x12\x16\n\x07\x64ropout\x18\x0b \x01(\x08:\x05\x66\x61lse\x12\x19\n\x0c\x64ropout_prob\x18\x0c \x01(\x02:\x03\x30.5\x12 \n\x11\x61pply_weight_norm\x18\r \x01(\x08:\x05\x66\x61lse\x12\x17\n\x0bweight_norm\x18\x0e \x01(\x02:\x02\x31\x30\x12\x1d\n\x0e\x61pply_l2_decay\x18\x0f \x01(\x08:\x05\x66\x61lse\x12\x16\n\x08l2_decay\x18\x10 \x01(\x02:\x04\x30.01\x12;\n\nactivation\x18\x11 \x01(\x0e\x32\x1f.deepnet.Hyperparams.Activation:\x06LINEAR\x12\x16\n\x0bleft_window\x18\x12 \x01(\x05:\x01\x30\x12\x17\n\x0cright_window\x18\x13 \x01(\x05:\x01\x30\x12\x13\n\x08mf_steps\x18\x14 \x01(\x05:\x01\x31\x12\x16\n\x0bgibbs_steps\x18\x15 \x01(\x05:\x01\x31\x12\x33\n\x05\x61\x64\x61pt\x18\x18 \x01(\x0e\x32\x1a.deepnet.Hyperparams.Adapt:\x08NO_ADAPT\x12 \n\x15stop_dropout_for_last\x18\x19 \x01(\x05:\x01\x30\x12\x1d\n\x0e\x65nable_display\x18\x1a \x01(\x08:\x05\x66\x61lse\x12\x18\n\tnormalize\x18\x1b \x01(\x08:\x05\x66\x61lse\x12\x17\n\x0cnormalize_to\x18\x1c \x01(\x02:\x01\x31\x12\x1f\n\x14start_learning_after\x18\x1d \x01(\x05:\x01\x30\x12\x1b\n\x10step_up_cd_after\x18\x1e \x01(\x05:\x01\x30\x12\'\n\x1c\x64\x65\x63\x61y_learning_rate_for_last\x18\x1f \x01(\x05:\x01\x30\x12\x1e\n\x0flearn_precision\x18  \x01(\x08:\x05\x66\x61lse\x12\x1c\n\x11precision_epsilon\x18! \x01(\x02:\x01\x30\x12 \n\x15precision_upper_bound\x18\" \x01(\x02:\x01\x31\x12\x1d\n\x0e\x61pply_l1_decay\x18# \x01(\x08:\x05\x66\x61lse\x12\x16\n\x08l1_decay\x18$ \x01(\x02:\x04\x30.01\x12\x1e\n\x13\x61pply_l1decay_after\x18% \x01(\x05:\x01\x30\x12\x18\n\tadd_noise\x18& \x01(\x08:\x05\x66\x61lse\x12\x14\n\x05shift\x18\' \x01(\x08:\x05\x66\x61lse\x12\x16\n\x0bshift_amt_x\x18( \x01(\x05:\x01\x30\x12\x14\n\tblocksize\x18) \x01(\x05:\x01\x31\x12\x16\n\x0bshift_amt_y\x18* \x01(\x05:\x01\x30\"1\n\x05\x44\x65\x63\x61y\x12\x08\n\x04NONE\x10\x00\x12\r\n\tINVERSE_T\x10\x01\x12\x0f\n\x0b\x45XPONENTIAL\x10\x02\"\x88\x01\n\nActivation\x12\n\n\x06LINEAR\x10\x00\x12\x0c\n\x08LOGISTIC\x10\x01\x12\x08\n\x04TANH\x10\x02\x12\x14\n\x10RECTIFIED_LINEAR\x10\x03\x12\x1b\n\x17RECTIFIED_LINEAR_SMOOTH\x10\x04\x12\x0b\n\x07SOFTMAX\x10\x05\x12\x16\n\x12REPLICATED_SOFTMAX\x10\x06\"\"\n\x05\x41\x64\x61pt\x12\x0c\n\x08NO_ADAPT\x10\x00\x12\x0b\n\x07\x41\x44\x41GRAD\x10\x01\"\x8c\x02\n\x04\x45\x64ge\x12\r\n\x05node1\x18\x01 \x02(\t\x12\r\n\x05node2\x18\x02 \x02(\t\x12\x16\n\x08\x64irected\x18\x03 \x01(\x08:\x04true\x12!\n\x05param\x18\x04 \x03(\x0b\x32\x12.deepnet.Parameter\x12)\n\x0bhyperparams\x18\x05 \x01(\x0b\x32\x14.deepnet.Hyperparams\x12 \n\x15receptive_field_width\x18\x06 \x01(\x05:\x01\x31\x12\x17\n\x0c\x64isplay_rows\x18\x07 \x01(\x05:\x01\x31\x12\x17\n\x0c\x64isplay_cols\x18\x08 \x01(\x05:\x01\x31\x12\x14\n\tup_factor\x18\t \x01(\x02:\x01\x31\x12\x16\n\x0b\x64own_factor\x18\n \x01(\x02:\x01\x31\"\xb8\x03\n\x05Model\x12\x0c\n\x04name\x18\x01 \x02(\t\x12,\n\nmodel_type\x18\x02 \x02(\x0e\x32\x18.deepnet.Model.ModelType\x12\x1d\n\x05layer\x18\x03 \x03(\x0b\x32\x0e.deepnet.Layer\x12\x1b\n\x04\x65\x64ge\x18\x04 \x03(\x0b\x32\r.deepnet.Edge\x12)\n\x0bhyperparams\x18\x05 \x01(\x0b\x32\x14.deepnet.Hyperparams\x12%\n\x0btrain_stats\x18\x06 \x03(\x0b\x32\x10.deepnet.Metrics\x12*\n\x10validation_stats\x18\x07 \x03(\x0b\x32\x10.deepnet.Metrics\x12$\n\ntest_stats\x18\x08 \x03(\x0b\x32\x10.deepnet.Metrics\x12\x0f\n\x04seed\x18\t \x01(\x05:\x01\x30\x12\x1c\n\x14positive_phase_order\x18\n \x03(\t\x12\x1c\n\x14negative_phase_order\x18\x0b \x03(\t\"F\n\tModelType\x12\x14\n\x10\x46\x45\x45\x44_FORWARD_NET\x10\x00\x12\x11\n\rRECURRENT_NET\x10\x01\x12\x07\n\x03\x44\x42N\x10\x02\x12\x07\n\x03\x44\x42M\x10\x03\"\xae\x04\n\tOperation\x12/\n\toptimizer\x18\x01 \x02(\x0e\x32\x1c.deepnet.Operation.Optimizer\x12\x37\n\rstopcondition\x18\x02 \x02(\x0b\x32 .deepnet.Operation.StopCondition\x12\x14\n\x05train\x18\x03 \x01(\x08:\x05\x66\x61lse\x12\x17\n\x0c\x63urrent_step\x18\x04 \x01(\x05:\x01\x30\x12\x14\n\tbatchsize\x18\x05 \x01(\x05:\x01\x31\x12\x12\n\ndata_proto\x18\x06 \x02(\t\x12\x15\n\neval_after\x18\x07 \x01(\x05:\x01\x31\x12\x1b\n\x10\x63heckpoint_after\x18\x08 \x01(\x05:\x01\x31\x12#\n\x14\x63heckpoint_directory\x18\t \x01(\t:\x05/tmp/\x12\x1d\n\x0fskip_last_piece\x18\n \x01(\x08:\x04true\x12\x18\n\trandomize\x18\x0e \x01(\x08:\x05\x66\x61lse\x12\x15\n\nshow_after\x18\x0f \x01(\x05:\x01\x30\x12\x16\n\x07verbose\x18\x10 \x01(\x08:\x05\x66\x61lse\x12\x1d\n\x0eget_last_piece\x18\x11 \x01(\x08:\x05\x66\x61lse\x1a?\n\rStopCondition\x12\x1c\n\rall_processed\x18\x01 \x01(\x08:\x05\x66\x61lse\x12\x10\n\x05steps\x18\x02 \x01(\x05:\x01\x30\"=\n\tOptimizer\x12\x14\n\x10GRADIENT_DESCENT\x10\x00\x12\t\n\x05LBFGS\x10\x03\x12\x06\n\x02\x43\x44\x10\x04\x12\x07\n\x03PCD\x10\x05\"\xf4\x02\n\x07Metrics\x12\x10\n\x05\x63ount\x18\x01 \x01(\x05:\x01\x30\x12\x15\n\rcorrect_preds\x18\x02 \x01(\x02\x12$\n\x15\x63ompute_correct_preds\x18\x03 \x01(\x08:\x05\x66\x61lse\x12\x15\n\rcross_entropy\x18\x04 \x01(\x02\x12$\n\x15\x63ompute_cross_entropy\x18\x05 \x01(\x08:\x05\x66\x61lse\x12\r\n\x05\x65rror\x18\x06 \x01(\x02\x12\x1c\n\rcompute_error\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x0b\n\x03MAP\x18\x08 \x01(\x02\x12\x1a\n\x0b\x63ompute_MAP\x18\t \x01(\x08:\x05\x66\x61lse\x12\x0e\n\x06prec50\x18\n \x01(\x02\x12\x1d\n\x0e\x63ompute_prec50\x18\x0b \x01(\x08:\x05\x66\x61lse\x12\x10\n\x08MAP_list\x18\x0c \x03(\x02\x12\x13\n\x0bprec50_list\x18\r \x03(\x02\x12\x10\n\x08sparsity\x18\x0e \x01(\x02\x12\x1f\n\x10\x63ompute_sparsity\x18\x0f \x01(\x08:\x05\x66\x61lse\"\xbe\x02\n\x07\x44\x61taset\x12\x0c\n\x04name\x18\x01 \x02(\t\x12#\n\x04\x64\x61ta\x18\x02 \x03(\x0b\x32\x15.deepnet.Dataset.Data\x12\x16\n\ngpu_memory\x18\x03 \x01(\t:\x02\x32G\x12\x17\n\x0bmain_memory\x18\x04 \x01(\t:\x02\x34G\x12\x1d\n\x0c\x64\x61ta_handler\x18\x05 \x01(\t:\x07\x64\x65\x65pnet\x1a\xaf\x01\n\x04\x44\x61ta\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x14\n\x0c\x66ile_pattern\x18\x02 \x02(\t\x12\x0c\n\x04size\x18\x03 \x02(\x05\x12\x12\n\ndimensions\x18\x04 \x03(\x05\x12\x15\n\nnum_labels\x18\x05 \x01(\x05:\x01\x31\x12\x0b\n\x03key\x18\x06 \x01(\t\x12\x15\n\x06sparse\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x12\n\x03seq\x18\x08 \x01(\x08:\x05\x66\x61lse\x12\x12\n\nstats_file\x18\t \x01(\t')
 
 
 
@@ -73,8 +73,8 @@ _PARAMETER_INITIALIZATION = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1169,
-  serialized_end=1338,
+  serialized_start=1347,
+  serialized_end=1516,
 )
 
 _HYPERPARAMS_DECAY = descriptor.EnumDescriptor(
@@ -98,8 +98,8 @@ _HYPERPARAMS_DECAY = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=2339,
-  serialized_end=2388,
+  serialized_start=2758,
+  serialized_end=2807,
 )
 
 _HYPERPARAMS_ACTIVATION = descriptor.EnumDescriptor(
@@ -139,8 +139,8 @@ _HYPERPARAMS_ACTIVATION = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=2391,
-  serialized_end=2527,
+  serialized_start=2810,
+  serialized_end=2946,
 )
 
 _HYPERPARAMS_ADAPT = descriptor.EnumDescriptor(
@@ -157,15 +157,11 @@ _HYPERPARAMS_ADAPT = descriptor.EnumDescriptor(
       name='ADAGRAD', index=1, number=1,
       options=None,
       type=None),
-    descriptor.EnumValueDescriptor(
-      name='ADASTAN', index=2, number=2,
-      options=None,
-      type=None),
   ],
   containing_type=None,
   options=None,
-  serialized_start=2529,
-  serialized_end=2576,
+  serialized_start=2948,
+  serialized_end=2982,
 )
 
 _MODEL_MODELTYPE = descriptor.EnumDescriptor(
@@ -193,8 +189,8 @@ _MODEL_MODELTYPE = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=3241,
-  serialized_end=3311,
+  serialized_start=3626,
+  serialized_end=3696,
 )
 
 _OPERATION_OPTIMIZER = descriptor.EnumDescriptor(
@@ -208,30 +204,22 @@ _OPERATION_OPTIMIZER = descriptor.EnumDescriptor(
       options=None,
       type=None),
     descriptor.EnumValueDescriptor(
-      name='ADAGRAD', index=1, number=1,
+      name='LBFGS', index=1, number=3,
       options=None,
       type=None),
     descriptor.EnumValueDescriptor(
-      name='ADASTAN', index=2, number=2,
+      name='CD', index=2, number=4,
       options=None,
       type=None),
     descriptor.EnumValueDescriptor(
-      name='LBFGS', index=3, number=3,
-      options=None,
-      type=None),
-    descriptor.EnumValueDescriptor(
-      name='CD', index=4, number=4,
-      options=None,
-      type=None),
-    descriptor.EnumValueDescriptor(
-      name='PCD', index=5, number=5,
+      name='PCD', index=3, number=5,
       options=None,
       type=None),
   ],
   containing_type=None,
   options=None,
-  serialized_start=3775,
-  serialized_end=3862,
+  serialized_start=4196,
+  serialized_end=4257,
 )
 
 
@@ -473,6 +461,34 @@ _PARAMETER_CONVOLUTION = descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    descriptor.FieldDescriptor(
+      name='rnorm', full_name='deepnet.Parameter.Convolution.rnorm', index=8,
+      number=9, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='norm_size', full_name='deepnet.Parameter.Convolution.norm_size', index=9,
+      number=10, type=5, cpp_type=1, label=1,
+      has_default_value=True, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='pow_scale', full_name='deepnet.Parameter.Convolution.pow_scale', index=10,
+      number=11, type=2, cpp_type=6, label=1,
+      has_default_value=True, default_value=0.75,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='add_scale', full_name='deepnet.Parameter.Convolution.add_scale', index=11,
+      number=12, type=2, cpp_type=6, label=1,
+      has_default_value=True, default_value=0.001,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -482,8 +498,8 @@ _PARAMETER_CONVOLUTION = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=979,
-  serialized_end=1166,
+  serialized_start=1062,
+  serialized_end=1344,
 )
 
 _PARAMETER = descriptor.Descriptor(
@@ -577,6 +593,27 @@ _PARAMETER = descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    descriptor.FieldDescriptor(
+      name='pretrained_model_param_name', full_name='deepnet.Parameter.pretrained_model_param_name', index=12,
+      number=13, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='local', full_name='deepnet.Parameter.local', index=13,
+      number=14, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='mult_factor', full_name='deepnet.Parameter.mult_factor', index=14,
+      number=15, type=2, cpp_type=6, label=1,
+      has_default_value=True, default_value=1,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -588,7 +625,7 @@ _PARAMETER = descriptor.Descriptor(
   is_extendable=False,
   extension_ranges=[],
   serialized_start=605,
-  serialized_end=1338,
+  serialized_end=1516,
 )
 
 
@@ -747,71 +784,134 @@ _HYPERPARAMS = descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='subtract_mean', full_name='deepnet.Hyperparams.subtract_mean', index=21,
-      number=22, type=8, cpp_type=7, label=1,
-      has_default_value=True, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='divide_stddev', full_name='deepnet.Hyperparams.divide_stddev', index=22,
-      number=23, type=8, cpp_type=7, label=1,
-      has_default_value=True, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='adapt', full_name='deepnet.Hyperparams.adapt', index=23,
+      name='adapt', full_name='deepnet.Hyperparams.adapt', index=21,
       number=24, type=14, cpp_type=8, label=1,
       has_default_value=True, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='stop_dropout_for_last', full_name='deepnet.Hyperparams.stop_dropout_for_last', index=24,
+      name='stop_dropout_for_last', full_name='deepnet.Hyperparams.stop_dropout_for_last', index=22,
       number=25, type=5, cpp_type=1, label=1,
       has_default_value=True, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='enable_display', full_name='deepnet.Hyperparams.enable_display', index=25,
+      name='enable_display', full_name='deepnet.Hyperparams.enable_display', index=23,
       number=26, type=8, cpp_type=7, label=1,
       has_default_value=True, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='normalize', full_name='deepnet.Hyperparams.normalize', index=26,
+      name='normalize', full_name='deepnet.Hyperparams.normalize', index=24,
       number=27, type=8, cpp_type=7, label=1,
       has_default_value=True, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='normalize_to', full_name='deepnet.Hyperparams.normalize_to', index=27,
+      name='normalize_to', full_name='deepnet.Hyperparams.normalize_to', index=25,
       number=28, type=2, cpp_type=6, label=1,
       has_default_value=True, default_value=1,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='start_learning_after', full_name='deepnet.Hyperparams.start_learning_after', index=28,
+      name='start_learning_after', full_name='deepnet.Hyperparams.start_learning_after', index=26,
       number=29, type=5, cpp_type=1, label=1,
       has_default_value=True, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='step_up_cd_after', full_name='deepnet.Hyperparams.step_up_cd_after', index=29,
+      name='step_up_cd_after', full_name='deepnet.Hyperparams.step_up_cd_after', index=27,
       number=30, type=5, cpp_type=1, label=1,
       has_default_value=True, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='decay_learning_rate_for_last', full_name='deepnet.Hyperparams.decay_learning_rate_for_last', index=30,
+      name='decay_learning_rate_for_last', full_name='deepnet.Hyperparams.decay_learning_rate_for_last', index=28,
       number=31, type=5, cpp_type=1, label=1,
+      has_default_value=True, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='learn_precision', full_name='deepnet.Hyperparams.learn_precision', index=29,
+      number=32, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='precision_epsilon', full_name='deepnet.Hyperparams.precision_epsilon', index=30,
+      number=33, type=2, cpp_type=6, label=1,
+      has_default_value=True, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='precision_upper_bound', full_name='deepnet.Hyperparams.precision_upper_bound', index=31,
+      number=34, type=2, cpp_type=6, label=1,
+      has_default_value=True, default_value=1,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='apply_l1_decay', full_name='deepnet.Hyperparams.apply_l1_decay', index=32,
+      number=35, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='l1_decay', full_name='deepnet.Hyperparams.l1_decay', index=33,
+      number=36, type=2, cpp_type=6, label=1,
+      has_default_value=True, default_value=0.01,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='apply_l1decay_after', full_name='deepnet.Hyperparams.apply_l1decay_after', index=34,
+      number=37, type=5, cpp_type=1, label=1,
+      has_default_value=True, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='add_noise', full_name='deepnet.Hyperparams.add_noise', index=35,
+      number=38, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='shift', full_name='deepnet.Hyperparams.shift', index=36,
+      number=39, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='shift_amt_x', full_name='deepnet.Hyperparams.shift_amt_x', index=37,
+      number=40, type=5, cpp_type=1, label=1,
+      has_default_value=True, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='blocksize', full_name='deepnet.Hyperparams.blocksize', index=38,
+      number=41, type=5, cpp_type=1, label=1,
+      has_default_value=True, default_value=1,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='shift_amt_y', full_name='deepnet.Hyperparams.shift_amt_y', index=39,
+      number=42, type=5, cpp_type=1, label=1,
       has_default_value=True, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -828,8 +928,8 @@ _HYPERPARAMS = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1341,
-  serialized_end=2576,
+  serialized_start=1519,
+  serialized_end=2982,
 )
 
 
@@ -919,8 +1019,8 @@ _EDGE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=2579,
-  serialized_end=2847,
+  serialized_start=2985,
+  serialized_end=3253,
 )
 
 
@@ -995,22 +1095,15 @@ _MODEL = descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='lower_model', full_name='deepnet.Model.lower_model', index=9,
+      name='positive_phase_order', full_name='deepnet.Model.positive_phase_order', index=9,
       number=10, type=9, cpp_type=9, label=3,
       has_default_value=False, default_value=[],
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='positive_phase_order', full_name='deepnet.Model.positive_phase_order', index=10,
+      name='negative_phase_order', full_name='deepnet.Model.negative_phase_order', index=10,
       number=11, type=9, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='negative_phase_order', full_name='deepnet.Model.negative_phase_order', index=11,
-      number=12, type=9, cpp_type=9, label=3,
       has_default_value=False, default_value=[],
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -1025,8 +1118,8 @@ _MODEL = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=2850,
-  serialized_end=3311,
+  serialized_start=3256,
+  serialized_end=3696,
 )
 
 
@@ -1060,8 +1153,8 @@ _OPERATION_STOPCONDITION = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3710,
-  serialized_end=3773,
+  serialized_start=4131,
+  serialized_end=4194,
 )
 
 _OPERATION = descriptor.Descriptor(
@@ -1130,7 +1223,7 @@ _OPERATION = descriptor.Descriptor(
     descriptor.FieldDescriptor(
       name='checkpoint_directory', full_name='deepnet.Operation.checkpoint_directory', index=8,
       number=9, type=9, cpp_type=9, label=1,
-      has_default_value=True, default_value=unicode("/ais/gobi3/u/nitish/tmp/", "utf-8"),
+      has_default_value=True, default_value=unicode("/tmp/", "utf-8"),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -1155,6 +1248,20 @@ _OPERATION = descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    descriptor.FieldDescriptor(
+      name='verbose', full_name='deepnet.Operation.verbose', index=12,
+      number=16, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='get_last_piece', full_name='deepnet.Operation.get_last_piece', index=13,
+      number=17, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -1165,8 +1272,8 @@ _OPERATION = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3314,
-  serialized_end=3862,
+  serialized_start=3699,
+  serialized_end=4257,
 )
 
 
@@ -1291,8 +1398,8 @@ _METRICS = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3865,
-  serialized_end=4237,
+  serialized_start=4260,
+  serialized_end=4632,
 )
 
 
@@ -1304,107 +1411,65 @@ _DATASET_DATA = descriptor.Descriptor(
   containing_type=None,
   fields=[
     descriptor.FieldDescriptor(
-      name='file_pattern', full_name='deepnet.Dataset.Data.file_pattern', index=0,
+      name='name', full_name='deepnet.Dataset.Data.name', index=0,
       number=1, type=9, cpp_type=9, label=2,
       has_default_value=False, default_value=unicode("", "utf-8"),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='size', full_name='deepnet.Dataset.Data.size', index=1,
-      number=2, type=5, cpp_type=1, label=2,
+      name='file_pattern', full_name='deepnet.Dataset.Data.file_pattern', index=1,
+      number=2, type=9, cpp_type=9, label=2,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='size', full_name='deepnet.Dataset.Data.size', index=2,
+      number=3, type=5, cpp_type=1, label=2,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='dimensions', full_name='deepnet.Dataset.Data.dimensions', index=2,
-      number=3, type=5, cpp_type=1, label=3,
+      name='dimensions', full_name='deepnet.Dataset.Data.dimensions', index=3,
+      number=4, type=5, cpp_type=1, label=3,
       has_default_value=False, default_value=[],
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='num_labels', full_name='deepnet.Dataset.Data.num_labels', index=3,
-      number=4, type=5, cpp_type=1, label=1,
-      has_default_value=False, default_value=0,
+      name='num_labels', full_name='deepnet.Dataset.Data.num_labels', index=4,
+      number=5, type=5, cpp_type=1, label=1,
+      has_default_value=True, default_value=1,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='key', full_name='deepnet.Dataset.Data.key', index=4,
-      number=5, type=9, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='gpu_memory', full_name='deepnet.Dataset.Data.gpu_memory', index=5,
+      name='key', full_name='deepnet.Dataset.Data.key', index=5,
       number=6, type=9, cpp_type=9, label=1,
-      has_default_value=True, default_value=unicode("500M", "utf-8"),
+      has_default_value=False, default_value=unicode("", "utf-8"),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='main_memory', full_name='deepnet.Dataset.Data.main_memory', index=6,
-      number=7, type=9, cpp_type=9, label=1,
-      has_default_value=True, default_value=unicode("2G", "utf-8"),
+      name='sparse', full_name='deepnet.Dataset.Data.sparse', index=6,
+      number=7, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='mean_centered', full_name='deepnet.Dataset.Data.mean_centered', index=7,
+      name='seq', full_name='deepnet.Dataset.Data.seq', index=7,
       number=8, type=8, cpp_type=7, label=1,
       has_default_value=True, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='unit_variance', full_name='deepnet.Dataset.Data.unit_variance', index=8,
-      number=9, type=8, cpp_type=7, label=1,
-      has_default_value=True, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='mean', full_name='deepnet.Dataset.Data.mean', index=9,
-      number=10, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value="",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='stddev', full_name='deepnet.Dataset.Data.stddev', index=10,
-      number=11, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value="",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='name', full_name='deepnet.Dataset.Data.name', index=11,
-      number=12, type=9, cpp_type=9, label=2,
+      name='stats_file', full_name='deepnet.Dataset.Data.stats_file', index=8,
+      number=9, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=unicode("", "utf-8"),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='sparse', full_name='deepnet.Dataset.Data.sparse', index=12,
-      number=13, type=8, cpp_type=7, label=1,
-      has_default_value=True, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='seq', full_name='deepnet.Dataset.Data.seq', index=13,
-      number=14, type=8, cpp_type=7, label=1,
-      has_default_value=True, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    descriptor.FieldDescriptor(
-      name='data_format', full_name='deepnet.Dataset.Data.data_format', index=14,
-      number=15, type=9, cpp_type=9, label=1,
-      has_default_value=True, default_value=unicode("protocolbuffer", "utf-8"),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -1417,8 +1482,8 @@ _DATASET_DATA = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=4303,
-  serialized_end=4633,
+  serialized_start=4778,
+  serialized_end=4953,
 )
 
 _DATASET = descriptor.Descriptor(
@@ -1429,16 +1494,37 @@ _DATASET = descriptor.Descriptor(
   containing_type=None,
   fields=[
     descriptor.FieldDescriptor(
-      name='data', full_name='deepnet.Dataset.data', index=0,
-      number=1, type=11, cpp_type=10, label=3,
+      name='name', full_name='deepnet.Dataset.name', index=0,
+      number=1, type=9, cpp_type=9, label=2,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='data', full_name='deepnet.Dataset.data', index=1,
+      number=2, type=11, cpp_type=10, label=3,
       has_default_value=False, default_value=[],
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='name', full_name='deepnet.Dataset.name', index=1,
-      number=2, type=9, cpp_type=9, label=2,
-      has_default_value=False, default_value=unicode("", "utf-8"),
+      name='gpu_memory', full_name='deepnet.Dataset.gpu_memory', index=2,
+      number=3, type=9, cpp_type=9, label=1,
+      has_default_value=True, default_value=unicode("2G", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='main_memory', full_name='deepnet.Dataset.main_memory', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=True, default_value=unicode("4G", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='data_handler', full_name='deepnet.Dataset.data_handler', index=4,
+      number=5, type=9, cpp_type=9, label=1,
+      has_default_value=True, default_value=unicode("deepnet", "utf-8"),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -1451,8 +1537,8 @@ _DATASET = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=4240,
-  serialized_end=4633,
+  serialized_start=4635,
+  serialized_end=4953,
 )
 
 _LAYER_DATAFIELD.containing_type = _LAYER;

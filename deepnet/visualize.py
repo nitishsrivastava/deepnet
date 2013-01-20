@@ -13,19 +13,29 @@ def show_model_state(model, step):
     dims = int(np.floor(np.sqrt(node.state.shape[0])))
     display_w(node.sample.asarray(), dims, 10, 10, i, title=node.name)
 
+def show_stats(edge, fig, title):
+  plt.figure(fig)
+  plt.clf()
+  plt.suptitle(title)
+  plt.hist(edge.params['weight'].asarray().flatten(), 100)
+  plt.draw()
+
 def display_hidden(state, fig, title, log=False):
   plt.figure(fig)
   plt.clf()
   plt.suptitle(title)
   plt.subplot(1, 2, 1);
   plt.hist(state.mean(axis=1), 100)
+  plt.xlim([0, 1])
   plt.title('Mean Activation')
   plt.subplot(1, 2, 2);
   plt.hist(state.flatten(), 100, log=log)
+  plt.xlim([0, 1])
   plt.title('Activation')
   plt.draw()
 
-def display_wsorted(w, s, r, c, fig, vmax=None, vmin=None, dataset='mnist', title='weights_sorted'):
+def display_wsorted(w, s, r, c, fig, vmax=None, vmin=None, dataset='mnist',
+                    title='weights_sorted'):
 
   if dataset == 'norb':
     numvis = 4096
@@ -59,7 +69,7 @@ def display_wsorted(w, s, r, c, fig, vmax=None, vmin=None, dataset='mnist', titl
   plt.figure(fig)
   plt.clf()
 
-  #plt.title(title)
+  plt.suptitle(title)
   # vmax = 0.5
   # vmin = -0.5
   plt.imshow(pvh2, cmap = plt.cm.gray, interpolation = 'nearest', vmax=vmax, vmin=vmin)
@@ -95,7 +105,7 @@ def display_w(w, s, r, c, fig, vmax=None, vmin=None, dataset='mnist', title='wei
   plt.figure(fig)
   plt.clf()
   plt.title(title)
-  plt.imshow(pvh, cmap = plt.cm.jet, interpolation = 'nearest', vmax=vmax, vmin=vmin)
+  plt.imshow(pvh, cmap = plt.cm.gray, interpolation = 'nearest', vmax=vmax, vmin=vmin)
   scale = 1
   xmax = sc*c
   ymax = sr*r
@@ -108,6 +118,32 @@ def display_w(w, s, r, c, fig, vmax=None, vmin=None, dataset='mnist', title='wei
       plt.axhline(y=y*sr/scale, xmin=0,xmax=xmax/scale, color = color)
   plt.draw()
 
+  return pvh
+
+def display_convw2(w, s, r, c, fig, title='conv_filters'):
+  """w: num_filters X sizeX**2 * num_colors."""
+  num_f, num_d = w.shape
+  assert s**2 * 3 == num_d
+  pvh = np.zeros((s*r, s*c, 3))
+  for i in range(r):
+    for j in range(c):
+      pvh[i*s:(i+1)*s, j*s:(j+1)*s, :] = w[i*c + j, :].reshape(3, s, s).T
+  mx = pvh.max()
+  mn = pvh.min()
+  pvh = 255*(pvh - mn) / (mx-mn)
+  pvh = pvh.astype('uint8')
+  plt.figure(fig)
+  plt.suptitle(title)
+  plt.imshow(pvh, interpolation="nearest")
+  scale = 1
+  xmax = s * c
+  ymax = s * r
+  color = 'k'
+  for x in range(0, c):
+    plt.axvline(x=x*s/scale, ymin=0, ymax=ymax/scale, color=color)
+  for y in range(0, r):
+    plt.axhline(y=y*s/scale, xmin=0, xmax=xmax/scale, color=color)
+  plt.draw()
   return pvh
 
 def display_convw(w, s, r, c, fig, vmax=None, vmin=None, dataset='mnist', title='conv_filters'):

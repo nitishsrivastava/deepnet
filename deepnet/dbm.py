@@ -63,6 +63,8 @@ class DBM(NeuralNet):
       if node.is_input:
         # Load data into input nodes.
         node.ComputeUp(train=train)
+      elif node.is_initialized:
+        node.GetData()
       else:
         # Initialize other nodes to zero.
         node.ResetState(rand=False)
@@ -283,6 +285,41 @@ class DBM(NeuralNet):
             node.state.asarray().T
     return dict(zip(names, rep_list))
 
+  def WriteRepresentationToDisk(self, layernames, output_dir, memory='1G',
+                                dataset='test'):
+    layers = [self.GetLayerByName(lname) for lname in layernames]
+    numdim_list = [layer.state.shape[0] for layer in layers]
+    if dataset == 'train':
+      datagetter = self.GetTrainBatch
+      if self.train_data_handler is None:
+        return
+      numbatches = self.train_data_handler.num_batches
+      size = numbatches * self.train_data_handler.batchsize
+    elif dataset == 'validation':
+      datagetter = self.GetValidationBatch
+      if self.validation_data_handler is None:
+        return
+      numbatches = self.validation_data_handler.num_batches
+      size = numbatches * self.validation_data_handler.batchsize
+    elif dataset == 'test':
+      datagetter = self.GetTestBatch
+      if self.test_data_handler is None:
+        return
+      numbatches = self.test_data_handler.num_batches
+      size = numbatches * self.test_data_handler.batchsize
+    datawriter = DataWriter(layernames, output_dir, memory, numdim_list, size)
+
+    for batch in range(numbatches):
+      datagetter()
+      sys.stdout.write('\r%d' % (batch+1))
+      sys.stdout.flush()
+      self.PositivePhase(train=False, evaluate=False)
+      reprs = [l.state.asarray().T for l in layers]
+      datawriter.Submit(reprs)
+    sys.stdout.write('\n')
+    datawriter.Commit()
+    return size
+
   def GetRepresentation(self, layername, numbatches, inputlayername=[],
                         validation=True):
     """Get the representation at layer 'layername'."""
@@ -305,6 +342,13 @@ class DBM(NeuralNet):
       datagetter()
       self.GetRepresentationOneBatch(layer_to_tap, inputlayer)
     return self.rep, self.inputs
+
+  def GetLayerByName(self, layername, down=False):
+    try:
+      l = next(l for l in self.layer if l.name == layername)
+    except StopIteration:
+      l = None
+    return l
 
   def DoInference(self, layername, numbatches, inputlayername=[], method='mf',
                   steps=0, validation=True):
@@ -359,14 +403,6 @@ class DBM(NeuralNet):
       self.inputs[i][self.rep_pos:self.rep_pos + self.e_op.batchsize,:] =\
         l.data.asarray().T
     self.rep_pos += self.e_op.batchsize
-
-  def GetLayerByName(self, layername, down=False):
-    layer = None
-    try:
-      layer = next(layer for layer in self.layer if layer.name == layername)
-    except StopIteration:
-      print 'No such layer %s.' % layername
-    return layer
 
   def UnclampLayer(self, layername):
     """Unclamps the layer 'layername'.

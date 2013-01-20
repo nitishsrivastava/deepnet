@@ -1,15 +1,19 @@
-name: "mnist_3layer_relu"
+name: "mnist_3layer_relu_dropout"
 model_type: FEED_FORWARD_NET
 seed: 42
 hyperparams {
-  base_epsilon: 0.01
-  epsilon_decay : EXPONENTIAL
+  base_epsilon: 1.0
+  adapt: NO_ADAPT
+  epsilon_decay : INVERSE_T
   epsilon_decay_half_life : 10000
-  initial_momentum : 0.9
-  final_momentum : 0.9
-  momentum_change_steps : 5000
-  apply_l2_decay: true
-  l2_decay: 0.001
+  initial_momentum : 0.5
+  final_momentum : 0.99
+  momentum_change_steps : 100000
+  dropout : true
+  dropout_prob : 0.5
+  apply_weight_norm : true
+  weight_norm : 3
+  apply_l2_decay: false
   activation: RECTIFIED_LINEAR
 }
 
@@ -18,6 +22,7 @@ layer {
   dimensions: 784
   is_input: true
   hyperparams{
+    dropout_prob: 0.2
     activation: LOGISTIC
   }
   data_field {
@@ -36,8 +41,11 @@ layer {
     initialization: CONSTANT
   }
   hyperparams{
+    dropout: false
     activation: SOFTMAX
+    enable_display: false
     apply_l2_decay: false
+    sparsity: false
   }
   is_output: true
   loss_function: CROSS_ENTROPY
@@ -55,45 +63,27 @@ layer {
 layer {
   name: "hidden1"
   dimensions: 1024
-  hyperparams{
-    apply_l2_decay: false
-  }
   param {
     name: "bias"
     initialization: CONSTANT
-  }
-  performance_stats {
-    compute_sparsity: true
   }
 }
 
 layer {
   name: "hidden2"
   dimensions: 1024
-  hyperparams{
-    apply_l2_decay: false
-  }
   param {
     name: "bias"
     initialization: CONSTANT
-  }
-  performance_stats {
-    compute_sparsity: true
   }
 }
 
 layer {
   name: "hidden3"
   dimensions: 2048
-  hyperparams{
-    apply_l2_decay: false
-  }
   param {
     name: "bias"
     initialization: CONSTANT
-  }
-  performance_stats {
-    compute_sparsity: true
   }
 }
 
@@ -104,7 +94,6 @@ edge {
   param {
     name: "weight"
     initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
-    sigma: 1.0
   }
 }
 

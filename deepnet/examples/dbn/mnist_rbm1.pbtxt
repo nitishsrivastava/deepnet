@@ -1,55 +1,70 @@
-name: "mnist_dbn"
-model_type: DBN
+name: "mnist_rbm1"
+model_type: DBM
 hyperparams {
-  base_epsilon: 1.0
+  base_epsilon: 0.01
   epsilon_decay : NONE
   epsilon_decay_half_life : 5000
   initial_momentum : 0.5
   final_momentum : 0.9
-  momentum_change_steps : 30000
-  sparsity : false
+  momentum_change_steps : 3000
+  sparsity : true
   sparsity_target : 0.1
-  sparsity_cost : 0.001
+  sparsity_cost : 0.01
   sparsity_damping : 0.9
+  dropout : false
+  dropout_prob : 0.5
+  apply_weight_norm : false
+  weight_norm : 3
   apply_l2_decay: true
-  l2_decay: 0.0001
+  l2_decay: 0.001
   activation: LOGISTIC
   gibbs_steps: 1
-  mcmc_steps: 1
 }
 
 layer {
-  name: "input layer"
-  dimensions: 500
+  name: "input_layer"
+  dimensions: 784
+  shape:28
+  shape:28
   is_input: true
   param {
     name: "bias"
     initialization: CONSTANT
   }
   data_field {
-    model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
-    layer_name: "hidden1"
+    train: "train_full_data"
+    test: "test_data"
   }
   loss_function: SQUARED_LOSS
   performance_stats {
-    compute_cross_entropy: false
-    compute_correct_preds: false
     compute_error: true
+  }
+  hyperparams {
+    sparsity : false
   }
 }
 
 layer {
   name: "hidden1"
-  dimensions: 500
+  dimensions: 1024
+  shape: 16
+  shape: 16
   param {
     name: "bias"
     initialization: CONSTANT
   }
+  performance_stats {
+    compute_sparsity: true
+  }
 }
 
 edge {
-  node1: "input layer"
+  node1: "input_layer"
   node2: "hidden1"
+  directed: false
+  receptive_field_width: 28
+  display_rows: 32
+  display_cols: 32
   param {
     name: "weight"
     initialization: DENSE_GAUSSIAN_SQRT_FAN_IN

@@ -1,12 +1,43 @@
 """Implements a layer of a Deep Boltzmann Machine."""
 from layer import *
+import pdb
 
 class DBMLayer(Layer):
 
   def LoadParams(self, proto):
     super(DBMLayer, self).LoadParams(proto)
     self.suff_stats = cm.empty((proto.numlabels * proto.dimensions, 1))
+    self.learn_precision = self.activation == deepnet_pb2.Hyperparams.LINEAR and self.hyperparams.learn_precision
+    if self.learn_precision:
+      self.suff_stats2 = cm.empty((proto.numlabels * proto.dimensions, 1))
+    self.fig_neg = visualize.GetFigId()
+    self.fig_precision = visualize.GetFigId()
 
+  def Show(self):
+    """Displays useful statistics about the layer."""
+    if not self.proto.hyperparams.enable_display:
+      return
+    if self.is_input:
+      visualize.display_hidden(self.data.asarray(), self.fig, title=self.name)
+      #visualize.display_w(self.neg_state.asarray(), self.proto.shape[0],
+      #                    10, self.batchsize/10, self.fig, title='data')
+      #visualize.display_w(self.params['bias'].asarray(),
+      #                    self.proto.shape[0], 1, 1, self.fig,
+      #                    title='bias')
+      #visualize.display_w(self.params['precision'].asarray(),
+      #                    self.proto.shape[0], 1, 1, self.fig_precision,
+      #                    title='precision')
+    else:
+      visualize.display_hidden(self.pos_state.asarray(), self.fig_neg, title=self.name + "_positive")
+      #visualize.display_hidden(self.neg_state.asarray(), 2*self.fig_neg, title=self.name + "_negative")
+      """
+      visualize.display_w(self.pos_state.asarray(), self.proto.shape[0],
+                          self.batchsize, 1, self.fig,
+                          title=self.name + "_positive", vmin=0, vmax=1)
+      visualize.display_w(self.neg_sample.asarray(), self.proto.shape[0],
+                          self.batchsize, 1, self.fig_neg,
+                          title=self.name + "_negative", vmin=0, vmax=1)
+      """
   def SetPhase(self, pos=True):
     """Setup required before starting a phase.
 
@@ -29,10 +60,12 @@ class DBMLayer(Layer):
     This is done to save memory when doing CD. Since the Markov chain is not run
     persistently, the neg state need not be preserved after each cycle.
     """
-    self.neg_state.free_device_memory()
-    self.neg_sample.free_device_memory()
-    self.neg_state = self.pos_state
-    self.neg_sample = self.pos_sample
+    if self.neg_state != self.pos_state:
+      self.neg_state.free_device_memory()
+      self.neg_state = self.pos_state
+    if self.neg_sample != self.pos_sample:
+      self.neg_sample.free_device_memory()
+      self.neg_sample = self.pos_sample
 
   def InitializeNegPhase(self, to_pos=False):
     """Initialize negative particles.
@@ -60,6 +93,7 @@ class DBMLayer(Layer):
                                             batchsize)))
     self.neg_sample = cm.CUDAMatrix(np.zeros((self.numlabels * self.dimensions,
                                             batchsize)))
+    self.sample = self.pos_sample
 
   def ComputeUp(self, train=False, recon=False, step=0, maxsteps=0):
     """
@@ -79,12 +113,13 @@ class DBMLayer(Layer):
       self.GetData()
     else:
       for i, edge in enumerate(self.incoming_edge):
+        neighbour = self.incoming_neighbour[i]
         if self.pos_phase:
           # Mean field in pos phase
-          inputs = self.incoming_neighbour[i].state
+          inputs = neighbour.state
         else:
           # Gibbs sampling in neg phase
-          inputs = self.incoming_neighbour[i].sample
+          inputs = neighbour.sample
         if edge.node2 == self:
           w = edge.params['weight'].T
           factor = edge.proto.up_factor
@@ -131,8 +166,20 @@ class DBMLayer(Layer):
         self.means.subtract(h.sparsity_target, target=self.means_temp)
         self.suff_stats.add_mult(self.means_temp,
                                  alpha=-self.batchsize * h.sparsity_cost)
+      if self.learn_precision:
+        temp = self.deriv
+        b = self.params['bias']
+        self.state.add_col_mult(b, mult=-1.0, target=temp)
+        temp.mult(temp)
+        temp.sum(axis=1, target=self.suff_stats2)
     else:
       self.suff_stats.add_sums(self.state, axis=1, mult=-1.0)
+      if self.learn_precision:
+        temp = self.deriv
+        b = self.params['bias']
+        self.state.add_col_mult(b, mult=-1.0, target=temp)
+        temp.mult(temp)
+        self.suff_stats2.add_sums(temp, axis=1, mult=-1.0)
 
     if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
       self.state.mult_by_row(self.NN)
@@ -151,7 +198,7 @@ class DBMLayer(Layer):
     elif h.epsilon_decay == deepnet_pb2.Hyperparams.INVERSE_T:
       epsilon = h.base_epsilon / (1 + float(step) / h.epsilon_decay_half_life)
     elif h.epsilon_decay == deepnet_pb2.Hyperparams.EXPONENTIAL:
-      epsilon = h.base_epsilon / np.pow(2, float(step) / h.epsilon_decay_half_life)
+      epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
     if step < h.start_learning_after:
       epsilon = 0.0
 
@@ -161,10 +208,44 @@ class DBMLayer(Layer):
     else:
       momentum = h.final_momentum
 
-    b_delta = self.params['grad_bias']
+    # Update bias.
+    if self.learn_precision:
+      p = self.params['precision']
+      p.upper_bound(h.precision_upper_bound)
+      self.suff_stats.mult(p)
     b = self.params['bias']
+    #b_delta = self.params['grad_bias']
+    b_delta = self.grad_bias
     b_delta.mult(momentum)
-    b_delta.add_mult(self.suff_stats, (1.0 - momentum)/numcases)
+    b_delta.add_mult(self.suff_stats, 1.0 / numcases)
     if h.apply_l2_decay:
-      b_delta.add_mult(b, -(1-momentum) * h.l2_decay)
-    b.add_mult(b_delta, epsilon)
+      b_delta.add_mult(b, -h.l2_decay)
+
+    if self.learn_precision:
+      p = self.params['precision']
+      b.divide(p)
+      b.add_mult(b_delta, epsilon)
+      b.mult(p)
+    else:
+      b.add_mult(b_delta, epsilon)
+
+    # Update precision.
+    if self.learn_precision:
+      p = self.params['precision']
+      p_delta = self.params['grad_precision']
+      p_delta.assign(0)
+      for i, edge in enumerate(self.incoming_edge):
+        inputs = edge.suff_stats
+        temp = edge.temp
+        if edge.node2 == self:
+          w = edge.params['weight'].T
+        else:
+          w = edge.params['weight']
+        inputs.mult(w, target=temp)
+        p_delta.add_sums(temp, axis=1)
+      p_delta.subtract(self.suff_stats2)
+      p_delta.divide(p)
+      p.add_mult(p_delta, h.precision_epsilon / numcases)
+      p.upper_bound(h.precision_upper_bound)
+      p.lower_bound(0)
+

@@ -1,10 +1,10 @@
 from edge import *
 
 class DBMEdge(Edge):
-  def LoadParams(self, proto, node1, node2):
-    super(DBMEdge, self).LoadParams(proto, node1, node2)
-    self.suff_stats = cm.empty((node1.numlabels * node1.dimensions,
-                                node2.numlabels * node2.dimensions))
+  def LoadParams(self):
+    super(DBMEdge, self).LoadParams()
+    self.suff_stats = cm.empty((self.node1.numlabels * self.node1.dimensions,
+                                self.node2.numlabels * self.node2.dimensions))
 
   def UpdateParams(self, step):
     """ Update the parameters associated with this edge.
@@ -28,16 +28,17 @@ class DBMEdge(Edge):
     elif h.epsilon_decay == deepnet_pb2.Hyperparams.INVERSE_T:
       epsilon = h.base_epsilon / (1 + float(step) / h.epsilon_decay_half_life)
     elif h.epsilon_decay == deepnet_pb2.Hyperparams.EXPONENTIAL:
-      epsilon = h.base_epsilon / np.pow(2, float(step) / h.epsilon_decay_half_life)
+      epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
     if step < h.start_learning_after:
       epsilon = 0.0
 
-    w_delta = self.params['grad_weight']
+    #w_delta = self.params['grad_weight']
+    w_delta = self.grad_weight
     w = self.params['weight']
     w_delta.mult(momentum)
     if h.apply_l2_decay:
-      w_delta.add_mult(w, -(1.0 -momentum)*h.l2_decay)
-    w_delta.add_mult(self.suff_stats, (1.0 -momentum) / batchsize)
+      w_delta.add_mult(w, -h.l2_decay)
+    w_delta.add_mult(self.suff_stats, 1.0 / batchsize)
     w.add_mult(w_delta, epsilon)
     if h.apply_weight_norm:
       w.norm_limit(h.weight_norm, axis=0)

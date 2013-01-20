@@ -149,6 +149,25 @@ class CUDAMatrix(object):
     numbers on a GPU.
     """
 
+    def overwrite(self, array, copy_to_device=True):
+        """Overwrites self with array.
+        
+        'array' should have a size smaller than that of the array used to
+        initialize the CUDAMatrix. The method will not throw an Exception just
+        yet if this is not true. It will throw exceptions or behave in strange
+        ways later on.
+        """
+        assert type(array) == np.ndarray, 'array must be a np.ndarray.'
+        array = reformat(array)
+        self.numpy_array = array
+        _cudamat.init_from_array(self.p_mat, array.ctypes.data_as(ct.POINTER(ct.c_float)), ct.c_int(array.shape[0]), ct.c_int(array.shape[1]))
+        _cudamat.set_on_device(self.p_mat)
+        if copy_to_device:
+            err_code = _cudamat.copy_to_device(self.p_mat)
+            if err_code:
+                raise generate_exception(err_code)
+
+
     def __init__(self, array, copy_to_device = True):
         """
         Initializes a new matrix object in one of two ways. If array is a numpy
@@ -193,7 +212,7 @@ class CUDAMatrix(object):
                 err_code = self.__free_device_memory(self.p_mat)
                 if err_code:
                     raise generate_exception(err_code)
-        except AttributeError:
+        except Exception:
             pass
 
     @staticmethod
@@ -217,6 +236,22 @@ class CUDAMatrix(object):
     def shape(self):
         return (self.mat.size[0], self.mat.size[1])
 
+    def set_shape(self, shape):
+        """
+        Sets the shape of the array to the given array.
+        Highly unsafe method. Does no checking.
+        Do not use this unless you know what you are doing.
+        """
+
+        m = ct.c_uint(shape[0])
+        n = ct.c_uint(shape[1])
+
+        err_code = _cudamat.set_shape(self.p_mat, m, n)
+        if err_code:
+            raise generate_exception(err_code)
+
+        return self
+
     def reshape(self, shape):
         """
         Reshapes self to have the given shape. The number of elements cannot
@@ -231,6 +266,31 @@ class CUDAMatrix(object):
             raise generate_exception(err_code)
 
         return self
+
+    def blockify(source, blocksize, target = None):
+        if target == None:
+            target = source
+
+        err_code = _cudamat.blockify(source.p_mat, target.p_mat, ct.c_uint(blocksize))
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+    def generate_translations(source, source_w, target_w, off_x, off_y, target = None):
+        num_channels = source.shape[0] / (source_w**2)
+
+        if target == None:
+            batch_s = source.shape[1]
+            target = empty((target_w**2, batch_s))
+
+        err_code = _cudamat.generate_translations_big_var_off(source.p_mat, target.p_mat, off_x.p_mat, off_y.p_mat, ct.c_uint(source_w), ct.c_uint(target_w), ct.c_uint(num_channels))
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
 
     def asarray(self):
         """
@@ -593,7 +653,7 @@ class CUDAMatrix(object):
             raise generate_exception(err_code)
 
         return target
-        
+ 
     def sum(self, axis, target = None):
         """
         Sum the matrix along the given dimension, where 0 represents the leading
@@ -659,6 +719,41 @@ class CUDAMatrix(object):
             err_code = _cudamat.greater_than_scalar(self.p_mat, ct.c_float(val), target.p_mat)
         else:
             err_code = _cudamat.greater_than(self.p_mat, val.p_mat, target.p_mat)
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+    def upper_bound(self, val, target = None):
+        """
+        Perform the operation target = (self > val) ? val:self, where val can be a matrix or a scalar.
+        """
+        if not target:
+            target = self
+
+        if isinstance(val, (int, float)):
+            err_code = _cudamat.upper_bound_scalar(self.p_mat, ct.c_float(val), target.p_mat)
+        else:
+            err_code = _cudamat.upper_bound(self.p_mat, val.p_mat, target.p_mat)
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+
+    def lower_bound(self, val, target = None):
+        """
+        Perform the operation target = (self < val) ? val:self, where val can be a matrix or a scalar.
+        """
+        if not target:
+            target = self
+
+        if isinstance(val, (int, float)):
+            err_code = _cudamat.lower_bound_scalar(self.p_mat, ct.c_float(val), target.p_mat)
+        else:
+            err_code = _cudamat.lower_bound(self.p_mat, val.p_mat, target.p_mat)
 
         if err_code:
             raise generate_exception(err_code)
@@ -1050,6 +1145,15 @@ class CUDAMatrix(object):
 
         return target
 
+    def sum_all(self):
+        err_code = ct.c_int(0)
+        res = _cudamat.sum_all(self.p_mat)
+
+        if err_code:
+            raise generate_exception(err_code.value, ct.byref(err_code))
+
+        return res
+
     def euclid_norm(self):
         err_code = ct.c_int(0)
         res = _cudamat.euclid_norm(self.p_mat, ct.byref(err_code))
@@ -1070,6 +1174,25 @@ class CUDAMatrix(object):
         """
 
         err_code = _cudamat.selectRows(self.p_mat, target.p_mat, indices.p_mat)
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+
+    def swap_columns(self, indices1, indices2, target):
+        """
+        swap columns at indices1 of self with columns at indices2 of target.
+        <indices1> and <indices2> must be row vectors of equal length. Its elements are float32's representing integers, e.g. "34.0" means the integer "34".
+        after this call, for all r,c, target[r,indices2[c]=self[r,indices1[c]].
+        self can be same as target, but then the result will be non-deterministic if there is overlap between indices1 and indices2. Can be used for in-place shuffling by making sure indices1 and indices2 do not overlap.
+        This returns target.
+        Negative indices are interpreted in the usual Python way: all elements of <indices> had better be in the range [-self.shape[1], self.shape[1]-1].
+        This does bounds checking, but out of bounds indices do not raise an exception (because the programmer was lazy). Instead, they result in NaN values in <target>.
+        """
+        assert indices1.shape == indices2.shape
+        err_code = _cudamat.swapRows(self.p_mat, target.p_mat, indices1.p_mat, indices2.p_mat)
 
         if err_code:
             raise generate_exception(err_code)

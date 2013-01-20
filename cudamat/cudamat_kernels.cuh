@@ -24,6 +24,7 @@
 
 #define PI 3.1415926535897932f
 
+__device__ float device_val;
 __global__ void kSeedRandom(unsigned int* randMults, unsigned long long* randWords, unsigned int seed);
 __global__ void kRandomUniform(unsigned int* randMults, unsigned long long* randWords, float* gData, unsigned int numElements);
 __global__ void kRandomGaussian(unsigned int* rndMults, unsigned long long* rndWords, float* gData, unsigned int numElements);
@@ -41,11 +42,16 @@ __global__ void kSetRowSlice(float* source, float* target, int start, int end, i
 __global__ void kLessThan(float* mat1, float* mat2, float* target, unsigned int len);
 __global__ void kLessThanScalar(float* mat, float val, float* target, unsigned int len);
 __global__ void kGreaterThan(float* mat1, float* mat2, float* target, unsigned int len);
+__global__ void kUpperBound(float* mat1, float* mat2, float* target, unsigned int len);
+__global__ void kLowerBound(float* mat1, float* mat2, float* target, unsigned int len);
 __global__ void kGreaterThanScalar(float* mat, float val, float* target, unsigned int len);
+__global__ void kUpperBoundScalar(float* mat, float val, float* target, unsigned int len);
+__global__ void kLowerBoundScalar(float* mat, float val, float* target, unsigned int len);
 __global__ void kMaxColumnwise(float* mat, float* target, unsigned int width, unsigned int height);
 __global__ void kArgMaxColumnwise(float* mat, float* target, unsigned int width, unsigned int height);
 __global__ void kSqSumColumnwise(float* mat, float* target, unsigned int width, unsigned int height);
 __global__ void kNormLimitColumnwise(float* mat, float* target, float norm, unsigned int width, unsigned int height);
+__global__ void kSumAll(float* mat, unsigned int len);
 __global__ void kSign(float* mat, float* target, unsigned int len);
 __global__ void kApplySigmoid(float* mat, float* target, unsigned int len);
 __global__ void kApplyTanh(float* mat, float* target, unsigned int len);
@@ -83,4 +89,7 @@ __global__ void kDivideScalar(float* mat, float alpha, float* dest, unsigned int
 __global__ void kAddScalar(float* a, float alpha, float* dest, unsigned int numEls);
 __global__ void kSelectRows(float* source, float* target, float* indices, int nRowIs, int nCols, int nSourceRows);
 __global__ void kSetSelectedRows(float* target, float* source, float* indices, int nRowIs, int nCols, int nTargetRows);
+__global__ void kSwapRows(float* target, float* source, float* indices1, float* indices2, int nRowIs, int nCols, int nRows);
+__global__ void kGenerateTranslationsBigVarOff(float* source, float* target, float* off_x_arr, float* off_y_arr, int source_w, int target_w, int num_channels);
+__global__ void kBlockify(float* source, float* target, int numdims, int blocksize);
 #endif

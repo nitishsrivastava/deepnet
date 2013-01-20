@@ -11,6 +11,7 @@ def LockGPU(max_retries=10):
     board = gpu_lock.obtain_lock_id()
     if board != -1:
       break
+    sleep(1)
   if board == -1:
     print 'No GPU board available.'
     sys.exit(1)
@@ -21,18 +22,29 @@ def LockGPU(max_retries=10):
 def FreeGPU():
   cm.cublas_shutdown()
 
-if __name__ == '__main__':
-  LockGPU()
-  model = util.ReadModel(sys.argv[1])
-  train_op = util.ReadOperation(sys.argv[2])
-  eval_op = util.ReadOperation(sys.argv[3])
+def LoadExperiment(model_file, train_op_file, eval_op_file):
+  model = util.ReadModel(model_file)
+  train_op = util.ReadOperation(train_op_file)
+  eval_op = util.ReadOperation(eval_op_file)
+  return model, train_op, eval_op
+
+def CreateDeepnet(model, train_op, eval_op):
   if model.model_type == deepnet_pb2.Model.FEED_FORWARD_NET:
-    model = NeuralNet(model, train_op, eval_op)
+    return NeuralNet(model, train_op, eval_op)
   elif model.model_type == deepnet_pb2.Model.DBM:
-    model = DBM(model, train_op, eval_op)
+    return DBM(model, train_op, eval_op)
   elif model.model_type == deepnet_pb2.Model.DBN:
-    model = DBN(model, train_op, eval_op)
+    return DBN(model, train_op, eval_op)
   else:
     raise Exception('Model not implemented.')
+
+def main():
+  LockGPU()
+  model, train_op, eval_op = LoadExperiment(sys.argv[1], sys.argv[2],
+                                            sys.argv[3])
+  model = CreateDeepnet(model, train_op, eval_op)
   model.Train()
   FreeGPU()
+
+if __name__ == '__main__':
+  main()

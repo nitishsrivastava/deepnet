@@ -1,5 +1,5 @@
-name: "mnist_rbm"
-model_type: DBM
+name: "mnist_dbn2"
+model_type: DBN
 hyperparams {
   base_epsilon: 0.01
   epsilon_decay : NONE
@@ -7,7 +7,7 @@ hyperparams {
   initial_momentum : 0.5
   final_momentum : 0.9
   momentum_change_steps : 3000
-  sparsity : false
+  sparsity : true
   sparsity_target : 0.1
   sparsity_cost : 0.01
   sparsity_damping : 0.9
@@ -19,6 +19,7 @@ hyperparams {
   l2_decay: 0.001
   activation: LOGISTIC
   gibbs_steps: 1
+  mf_steps: 1
 }
 
 layer {
@@ -35,19 +36,44 @@ layer {
     train: "train_full_data"
     test: "test_data"
   }
+  param {
+    name: "bias_generative"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
+    pretrained_model_param_name: "bias"
+  }
   hyperparams {
-    dropout: false
+    sparsity : false
   }
-  loss_function: SQUARED_LOSS
-  performance_stats {
-    compute_error: true
-  }
+
 }
 
 layer {
   name: "hidden1"
   dimensions: 1024
   shape: 16
+  shape: 16
+  param {
+    name: "bias_generative"
+    initialization: CONSTANT
+  }
+  param {
+    name: "bias"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
+  }
+  loss_function: SQUARED_LOSS
+  performance_stats {
+    compute_error: true
+  }
+  hyperparams {
+    sparsity : false
+  }
+}
+layer {
+  name: "hidden2"
+  dimensions: 1024
+  shape: 32
   shape: 16
   param {
     name: "bias"
@@ -59,15 +85,22 @@ layer {
 }
 
 edge {
-  node1: "input_layer"
-  node2: "hidden1"
+  node1: "hidden1"
+  node2: "input_layer"
+  param {
+    name: "weight"
+    initialization: PRETRAINED
+    pretrained_model: "/ais/gobi3/u/nitish/mnist/models/mnist_rbm1_LAST"
+    transpose_pretrained: true
+  }
+}
+edge {
+  node1: "hidden1"
+  node2: "hidden2"
   directed: false
-  receptive_field_width: 28
-  display_rows: 16
-  display_cols: 16
   param {
     name: "weight"
     initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
-    sigma : 0.01
+    sigma : 1.0
   }
 }

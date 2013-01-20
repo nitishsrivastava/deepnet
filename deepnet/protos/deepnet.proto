@@ -60,12 +60,19 @@ message Parameter {
     optional bool max_pool = 6 [default=false];
     optional int32 pool_size = 7 [default=0];
     optional int32 pool_stride = 8 [default=0];
+    optional bool rnorm = 9 [default=false];
+    optional int32 norm_size = 10 [default=0];
+    optional float pow_scale = 11 [default=0.75];
+    optional float add_scale = 12 [default=0.001];
   }
   optional Convolution conv_params = 8;
   repeated string pretrained_model = 9;
   optional string pretrained_model_node1 = 10;
   optional string pretrained_model_node2 = 11;
   optional bool transpose_pretrained = 12 [default=false];
+  optional string pretrained_model_param_name = 13;
+  optional bool local = 14 [default=false];
+  optional float mult_factor = 15[default=1.0];
 }
 
 message Hyperparams {
@@ -104,8 +111,6 @@ message Hyperparams {
   optional int32 right_window = 19 [default=0];
   optional int32 mf_steps = 20 [default=1];
   optional int32 gibbs_steps = 21 [default=1];
-  optional bool subtract_mean = 22 [default=false];
-  optional bool divide_stddev = 23 [default=false];
   enum Adapt {
     NO_ADAPT = 0;
     ADAGRAD = 1;
@@ -113,11 +118,22 @@ message Hyperparams {
   optional Adapt adapt = 24 [default=NO_ADAPT];
   optional int32 stop_dropout_for_last = 25 [default=0];
   optional bool enable_display = 26 [default=false];
-  optional bool normalize = 27 [default=false];  // Replicated Softmax.
+  optional bool normalize = 27 [default=false];
   optional float normalize_to = 28 [default=1.0];  // Replicated Softmax.
   optional int32 start_learning_after = 29 [default=0];
   optional int32 step_up_cd_after = 30 [default=0];
   optional int32 decay_learning_rate_for_last = 31 [default=0];
+  optional bool learn_precision = 32 [default=false];
+  optional float precision_epsilon = 33 [default=0.0];
+  optional float precision_upper_bound = 34 [default=1.0];
+  optional bool apply_l1_decay = 35 [default=false];
+  optional float l1_decay = 36 [default=0.01];
+  optional int32 apply_l1decay_after = 37 [default=0];
+  optional bool add_noise = 38 [default=false];
+  optional bool shift = 39 [default=false];
+  optional int32 shift_amt_x = 40 [default=0];
+  optional int32 blocksize = 41 [default=1];  // block size for group dropout
+  optional int32 shift_amt_y = 42 [default=0];
 }
 
 message Edge {
@@ -149,9 +165,10 @@ message Model {
   repeated Metrics validation_stats = 7;
   repeated Metrics test_stats = 8;
   optional int32 seed = 9 [default=0];
-  repeated string lower_model = 10;
-  repeated string positive_phase_order = 11;
-  repeated string negative_phase_order = 12;
+
+  // For DBMs.
+  repeated string positive_phase_order = 10;
+  repeated string negative_phase_order = 11;
 }
 
 message Operation {
@@ -177,6 +194,8 @@ message Operation {
   optional bool skip_last_piece = 10 [default=true];
   optional bool randomize = 14 [default=false];
   optional int32 show_after = 15 [default=0];
+  optional bool verbose = 16 [default=false];
+  optional bool get_last_piece = 17 [default=false];
 }
 
 message Metrics {
@@ -198,23 +217,20 @@ message Metrics {
 }
 
 message Dataset {
+  required string name = 1;
   message Data {
-    required string file_pattern = 1;
-    required int32 size = 2;
-    repeated int32 dimensions = 3;
-    optional int32 num_labels = 4;
-    repeated string key = 5;
-    optional string gpu_memory = 6 [default="500M"];
-    optional string main_memory = 7 [default="2G"];
-    optional bool mean_centered = 8 [default=false];
-    optional bool unit_variance = 9 [default=false];
-    optional bytes mean = 10;
-    optional bytes stddev = 11;
-    required string name = 12;
-    optional bool sparse = 13 [default=false];
-    optional bool seq = 14 [default=false];
-    optional string data_format = 15 [default="protocolbuffer"];
+    required string name = 1;
+    required string file_pattern = 2;
+    required int32 size = 3;
+    repeated int32 dimensions = 4;
+    optional int32 num_labels = 5 [default=1];
+    optional string key = 6;
+    optional bool sparse = 7 [default=false];
+    optional bool seq = 8 [default=false];
+    optional string stats_file = 9;
   }
-  repeated Data data = 1;
-  required string name = 2;
+  repeated Data data = 2;
+  optional string gpu_memory = 3 [default="2G"];
+  optional string main_memory = 4 [default="4G"];
+  optional string data_handler = 5 [default="deepnet"];
 }

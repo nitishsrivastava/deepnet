@@ -23,14 +23,14 @@ positive_phase_order : "hidden1"
 positive_phase_order : "joint hidden"
 positive_phase_order : "hidden2"
 
-negative_phase_order : "input layer"
-negative_phase_order : "label layer"
+negative_phase_order : "input_layer"
+negative_phase_order : "label_layer"
 negative_phase_order : "hidden2"
 negative_phase_order : "hidden1"
 negative_phase_order : "joint hidden"
 
 layer {
-  name: "input layer"
+  name: "input_layer"
   dimensions: 784
   is_input: true
   param {
@@ -55,7 +55,7 @@ layer {
 }
 
 layer {
-  name: "label layer"
+  name: "label_layer"
   dimensions: 1
   numlabels: 10
   is_input: true
@@ -104,7 +104,7 @@ layer {
   }
 }
 edge {
-  node1: "input layer"
+  node1: "input_layer"
   node2: "hidden1"
   directed: false
   param {
@@ -136,7 +136,7 @@ edge {
   }
 }
 edge {
-  node1: "label layer"
+  node1: "label_layer"
   node2: "joint hidden"
   directed: false
   param {

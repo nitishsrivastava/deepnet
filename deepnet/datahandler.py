@@ -1,551 +1,719 @@
-"""Data handling class."""
-
+from deepnet import util
 import cPickle as pickle
 import cudamat as cm
-import deepnet_pb2
 import glob
 import numpy as np
 import os.path
-import scipy.sparse
+import scipy.sparse as sp
+import pdb
+import gzip
+import random
 
-def DataHandle(*args, **kwargs):
-  proto = args[1]
-  data_format = proto.data_format
-  if data_format == "protocolbuffer":
-    if proto.seq:
-      DH = SequentialDataHandler
-    elif proto.sparse:
-      DH = SparseDataHandler
-    else:
-      DH = DataHandler
-  elif data_format == "navdeep_data":
-    import navdeep_datahandler
-    DH = navdeep_datahandler.NavdeepDataHandler
-  else:
-    raise Exception('Unknown data format.')
-  return DH(*args, **kwargs)
+class Disk(object):
+  """A Disk access manager."""
+  def __init__(self, filenames, numdim_list, total_size, keys=[], verbose=False,
+              **kwargs):
+    """Initializes a Disk object.
 
-class Cache(object):
-  def __init__(self, name, source, capacity, parent_capacity, blocksize=1,
-               typesize=4, gpu=False, verbose=False, numdims=1,
-               randomize=False, permutation_link=None):
-    """Simulates a cache.
     Args:
-      name: Name of this cache.
-      source: The place where this cache gets the data from
-              (usually another Cache object).
-      capacity: Capacity of the cache in bytes.
-      blocksize: Number of elements that will be read in one atomic read.
-      typesize: sizeof(float), usually 4.
-      gpu: Is the cache on the gpu?
-        Will store the data in cudamat array for gpu, numpy for main memory.
+      filenames: List of list of filenames.
+      numdim_list: List of integers that represent the dimensionality of the
+        data.
+      total_size: Number of data points in the dataset (sum over all files).
+      verbose: If True, will print out details of what is happening.
     """
-    self.name = name
-    self.source = source
-    self.randomize = randomize
-    self.capacity = capacity / typesize
-    self.current_size = 0
-    self.blocksize = blocksize
-    self.typesize = typesize
-    self.gpu = gpu
-    self.numdims = numdims
-    self.num_blocks = parent_capacity / capacity
-    self.permutation_link = permutation_link
-    if (parent_capacity % capacity) > 0: 
-      self.num_blocks += 1
-    self.Clear()
-    self.verbose = verbose
-    self.permutation_link = permutation_link
-    if permutation_link:
-      self.indices = self.permutation_link.indices
-    else:
-      self.indices = None
-    if verbose:
-      print '%s Num blocks: %d' % (self.name, self.num_blocks)
-      print 'Capacity: %d' % self.capacity
-      print 'Blocksize: %d' % self.blocksize
-
-  def Clear(self):
-    self._data = None
-    self._position = 0
-
-  def TupleMultiply(self, t):
-    return reduce(lambda a, x: a * x, list(t))
-
-  def Get(self, blocksize=None):
-    if blocksize and blocksize != self.blocksize:
-      self.blocksize = blocksize
-    if self._position >= self.current_size or self._data is None:
-      self._position = 0
-      if self.num_blocks > 1 or self._data is None:
-        if self.verbose:
-          print 'CACHE MISS in %s' % self.name
-        if self.gpu:
-          if self._data:
-            self._data.free_device_memory()
-          self._data = cm.CUDAMatrix(
-            self.source.Get((self.capacity)).reshape(1, -1))
-          self.current_size = self._data.shape[1]
-        else:
-          self._data = self.source.Get((self.capacity))
-          self.current_size = self._data.shape[0]
-      if self.randomize:
-        if self.permutation_link:
-          self.indices = self.permutation_link.indices
-        else:
-          p = np.arange(self.current_size / self.numdims)
-          np.random.shuffle(p)
-          if self.gpu:
-            if self.indices is not None:
-              self.indices.free_device_memory()
-            p2 = p.view()
-            p2.shape = 1, -1
-            self.indices = cm.CUDAMatrix(p2)
-          else:
-            self.indices = p
-        if self.gpu:
-          self._data.reshape((self.numdims, self.current_size / self.numdims))
-          shuffled_data = cm.empty(self._data.shape)
-          self._data.select_columns(self.indices, target=shuffled_data)
-          self._data.free_device_memory()
-          self._data = shuffled_data
-          self._data.reshape((1, self.current_size))
-        else:
-          view = self._data.view()
-          view.shape = self.current_size / self.numdims, self.numdims
-          self._data = view[self.indices,:].reshape(-1)
-
-    span = min(self.blocksize, self.current_size - self._position)
-    self._position += span
-    if self.gpu:
-      return self._data.slice(self._position - span, self._position)
-    else:
-      return self._data[self._position - span : self._position]
-
-class Disk(Cache):
-
-  def __init__(self, name, filenames, data_size, blocksize,
-               typesize=4, verbose=False, numdims=1):
-    self.name = name
-    self.current_file = 0
-    self.numdims = numdims
+    assert len(filenames) == len(numdim_list)
+    self.num_data = len(filenames)
+    self.numdim_list = numdim_list
     self.filenames = filenames
-    self.blocksize = blocksize
-    self.num_blocks = data_size / (typesize * blocksize)
-    self.max_blocksize = data_size / typesize
-    if self.num_blocks == 0:
-      self.blocksize = self.max_blocksize
-      self.num_blocks = 1
-    elif (data_size % (typesize * blocksize)) > 0:
-      self.num_blocks += 1
-    self.num_files = len(self.filenames)
-    self.gpu = False
-    self._data = None
+    self._num_file_list = [len(filename_list) for filename_list in filenames]
+    self._maxpos = total_size
     self.verbose = verbose
-    self.mean = None
-    self.subtract_mean = False
-    self.stddev = None
-    self.divide_stddev = False
-
-  def ComputeDataStats(self, write_proto=False):
-    data = self.Get(flatten=False)
-    assert data.dtype == 'float32'
-    self.mean = data.mean(axis=0)
-    self.stddev = data.std(axis=0) + np.exp(-30)
-    assert self.mean.dtype == 'float32'
-
-  def SetDataStats(self, proto, subtract_mean=False, divide_stddev=False):
-    if not proto.mean_centered and subtract_mean:
-      print 'Subtracting mean'
-      self.mean = np.fromstring(proto.mean, dtype='float32')
-      self.subtract_mean = True
-    if not proto.unit_variance and divide_stddev:
-      print 'Dividing by stddev'
-      self.stddev = np.fromstring(proto.stddev, dtype='float32')
-      self.divide_stddev = True
+    self.left_overs = [None]*self.num_data
+    self.last_read_chunk = [None]*self.num_data
+    self.last_read_file = [-1]*self.num_data
+    self.data = [None]*self.num_data
+    if keys:
+      self.keys = keys
+    else:
+      self.keys = [None]*self.num_data
 
 
-  def ReadDiskData(self, filename):
+  def AddSparseData(self, data, chunk):
+    """Appends chunk to data."""
+    if data is None:
+      return chunk
+    else:
+      return sp.vstack((data, chunk)).tocsr()
+
+  def Get(self, batchsize):
+    """Reads data from disk.
+    Args:
+      batchsize: Number of data points to read.
+    Returns:
+      A list of numpy arrays each with batchsize rows. Each element of the list
+      is one data modality.
+    """
+    data_list = []
+    for i in range(self.num_data):
+      key = self.keys[i]
+      numdims = self.numdim_list[i]
+      filename_list = self.filenames[i]
+      num_files = self._num_file_list[i]
+      current_file = (self.last_read_file[i] + 1) % num_files
+      sparse = os.path.splitext(filename_list[current_file])[1] == '.npz'
+
+      # Allocate memory for storing data that will come from the disk.
+      if sparse:
+        # Sparse matrices do not allow slice assignment, so we will stack them
+        # as they come.
+        data = None
+      else:
+        if self.data[i] is None:
+          self.data[i] = np.zeros((batchsize, numdims), dtype='float32')
+        data = self.data[i]
+      datasize = 0  # Number of rows of data filled up.
+
+      # First put any left overs from previous disk accesses.
+      if self.left_overs[i] is not None:
+        left_over_size = self.left_overs[i].shape[0]
+        if left_over_size > batchsize:
+          if sparse:
+            data = self.left_overs[i][:batchsize]
+          else:
+            data[:batchsize] = self.left_overs[i][:batchsize]
+          self.left_overs[i] = self.left_overs[i][batchsize:]
+          datasize = batchsize
+        else:
+          if sparse:
+            data = self.left_overs[i]
+          else:
+            data[:left_over_size] = self.left_overs[i]
+          self.left_overs[i] = None
+          datasize = left_over_size
+
+      # Read data from disk.
+      while(datasize < batchsize):
+        if self.last_read_file[i] != current_file:
+          this_chunk = self.ReadDiskData(filename_list[current_file], key)
+          self.last_read_chunk[i] = this_chunk
+          self.last_read_file[i] = current_file
+        else:
+          this_chunk = self.last_read_chunk[i]
+        this_chunk_size = this_chunk.shape[0]
+
+        if datasize + this_chunk_size > batchsize:
+          # Put part of this_chunk into the data and remaining in left_overs.
+          self.left_overs[i] = this_chunk[batchsize - datasize:]
+          if sparse:
+            data = self.AddSparseData(data, this_chunk[:batchsize - datasize])
+          else:
+            data[datasize : batchsize] = this_chunk[:batchsize - datasize]
+          datasize = batchsize
+        else:
+          # Put whole of this_chunk into the data.
+          self.left_overs[i] = None
+          if sparse:
+            data = self.AddSparseData(data, this_chunk)
+          else:
+            data[datasize : datasize + this_chunk_size] = this_chunk
+          datasize += this_chunk_size
+        current_file = (current_file + 1) % num_files
+      data_list.append(data)
+    return data_list
+
+  @staticmethod
+  def LoadPickle(inputfile, key=None, verbose=False):
+    """Loads a pickle."""
+    fo = gzip.GzipFile(inputfile, 'rb')
+    spec = pickle.load(fo)
+    if key:
+      spec = spec[key].T
+    fo.close()
+    return spec
+
+  @staticmethod
+  def LoadSparse(inputfile, verbose=False):
+    """Loads a sparse matrix stored as npz file."""
+    npzfile = np.load(inputfile)
+    mat = sp.csr_matrix((npzfile['data'], npzfile['indices'],
+                                  npzfile['indptr']),
+                                  shape=tuple(list(npzfile['shape'])))
+    if verbose:
+      print 'Loaded sparse matrix from %s of shape %s' % (inputfile,
+                                                          mat.shape.__str__())
+    return mat
+
+  @staticmethod
+  def SaveSparse(outputfile, mat, verbose=False):
+    if verbose:
+      print 'Saving to %s shape %s' % (outputfile, mat.shape.__str__())
+    np.savez(outputfile, data=mat.data, indices=mat.indices, indptr=mat.indptr,
+             shape=np.array(list(mat.shape)))
+
+
+
+  def ReadDiskData(self, filename, key=''):
+    """Reads data from filename."""
     if self.verbose:
       print 'Reading from disk %s' % filename
     ext = os.path.splitext(filename)[1]
     if ext == '.npy':
       data = np.load(filename)
     elif ext == '.mat':
-      if 'key' in kwargs.keys():
-          key = kwargs['key']
-      else:
-          key = desc
       data = scipy.io.loadmat(filename, struct_as_record = True)[key]
     elif ext == '.p':
       data = pickle.load(gzip.GzipFile(filename, 'rb'))
     elif ext == '.txt':
       data = np.loadtext(filename)
     elif ext == '.npz':
-      data = self.load_sparse(filename)
+      data = Disk.LoadSparse(filename, verbose=self.verbose)
+    elif ext == '.spec':
+      data = Disk.LoadPickle(filename, key, verbose=self.verbose)
     else:
       raise Exception('Unknown file extension %s' % ext)
     if data.dtype == 'float64':
       data = data.astype('float32')
-    if self.subtract_mean:
-      data -= self.mean
-    if self.divide_stddev:
-      data /= self.stddev
-    if len(data.shape) == 1 or (len(data.shape)==2 and (
-      data.shape[0] == 1 or data.shape[1] == 1)):
+
+    # 1-D data as column vector.
+    if len(data.shape) == 1 or (len(data.shape)==2 and data.shape[0] == 1):
       data = data.reshape(-1, 1)
+
     return data
 
-  def Get(self, blocksize=None, flatten=True):
-    if self.num_blocks > 1 or self._data is None:
-      if not blocksize:
-        blocksize = self.blocksize
-      if blocksize > self.max_blocksize:
-        blocksize = self.max_blocksize
-      total_datasize = blocksize / self.numdims
-      data = np.zeros((total_datasize, self.numdims), dtype='float32')
-      datasize = 0
-      while(datasize < total_datasize):
-        this_chunk = self.ReadDiskData(self.filenames[self.current_file])
-        this_chunk_size, numdims = this_chunk.shape
-        assert numdims == self.numdims, "Disk %s was told data has numdims %d, "\
-            "but loaded data had numdims %d" % (self.name, self.numdims, numdims)
-        if datasize + this_chunk_size > total_datasize:
-          break
-        data[datasize:datasize+this_chunk_size] = this_chunk
-        datasize += this_chunk_size
-        self.current_file = (self.current_file + 1) % self.num_files
-      self._data = data[:datasize,:]
-      if flatten:
-        self._data.shape = (-1)
-    return self._data
 
-def AlignUp(a, b):
-  c = a / b
-  if a % b > 0:
-    c += 1
-  return c * b
+class Cache(object):
+  def __init__(self, parent, capacity, numdim_list, typesize=4, randomize=False,
+              verbose=False, **kwargs):
+    """Initialize a Cache.
+    Args:
+      parent: object that will provide data to this cache. Must have a Get().
+      capacity: Maximum number of bytes that can fit in the cache.
+      numdim_list: List of dimensions of the data.
+      typesize: size (in bytes) of an atomic data entry.
+      randomize: If True, shuffle the vectors after receiving them from the
+        parent.
+      verbose: If True, print info about what is happening.
+    """
+    self.parent = parent
+    self.num_data = len(numdim_list)
+    self.numdims = sum(numdim_list)
+    self.numdim_list = numdim_list
+    self._maxpos = capacity / (self.numdims * typesize)
+    self.verbose = verbose
+    self.capacity = self._maxpos * self.numdims * typesize
+    self.typesize = typesize
+    self._pos = 0
+    self.data = []
+    self.datasize = 0
+    self.randomize = randomize
+    if self.verbose:
+      print 'Capacity %d bytes for data of size %d X %d rand=%s' % (
+        self.capacity, self._maxpos, self.numdims, randomize)
 
+  def LoadData(self):
+    """Load data from the parent."""
+
+    # If cache has no data or it holds less data than parent, then it is
+    # time to ask for more data.
+    if self.data == [] or self._maxpos < self.parent._maxpos:
+      self.data = self.parent.Get(self._maxpos)
+      self.datasize = self.data[0].shape[0]
+
+    if self.randomize:
+      # Shuffle the data. Need to make sure same shuffle is applied to all data
+      # pieces in the list.
+      rng_state = np.random.get_state()
+      for i, d in enumerate(self.data):
+        if sp.issparse(d):  # Not easy to do in-place shuffling for sparse data.
+          indices = np.arange(d.shape[0])
+          np.random.set_state(rng_state)
+          np.random.shuffle(indices)
+          self.data[i] = d[indices]
+        else:
+          np.random.set_state(rng_state)
+          np.random.shuffle(d)
+
+  def Get(self, batchsize):
+    """Get data points from the cache.
+    Args:
+      batchsize: Number of data points requested. Will return fewer than
+        batchsize iff the cache does not have enough data.
+    Returns:
+      Numpy array slice of shape batchsize X numdims.
+    """
+    if self._pos == self.datasize:
+      self._pos = 0
+    if self._pos == 0:
+      self.LoadData()
+    start = self._pos
+    end = self._pos + batchsize
+    if end > self.datasize:
+      end = self.datasize
+    self._pos = end
+    batch = [d[start:end] for d in self.data]
+    return batch
+
+
+class GPUCache(Cache):
+  """GPU memory manager."""
+  def __init__(self, *args, **kwargs):
+    super(GPUCache, self).__init__(*args, **kwargs)
+    
+    self.data = [None] * self.num_data
+    self.empty = True
+    self.allocated_memory_size = [0] * self.num_data
+    
+    # Elementary preprocessing can be done on the GPU.
+    self.normalize = [False] * self.num_data
+    self.means = [None] * self.num_data
+    self.stds = [None] * self.num_data
+
+    # Add gaussian noise.
+    self.add_noise = kwargs.get('add_noise', [False]*self.num_data)
+    sigma = 0.01
+
+    # Add random translations (useful for vision data).
+    self.translate = kwargs.get('shift', [False]*self.num_data)
+    shift_amt_x = kwargs.get('shift_amt_x', [0])[0]
+    shift_amt_y = kwargs.get('shift_amt_y', [0])[0]
+    center_only = kwargs.get('center_only', False)
+    shift_amt = max(shift_amt_x, shift_amt_y)
+    self.sizeX = 32  # Should pass this as arguments!
+    self.sizex = 32 - 2 * shift_amt
+    self.num_channels = 3
+    if center_only:  # True for test data.
+      self.translate_range_x = [0]
+      self.translate_range_y = [0]
+      self.sigma = 0
+    else:
+      self.translate_range_x = range(-shift_amt_x, shift_amt_x + 1)
+      self.translate_range_y = range(-shift_amt_y, shift_amt_y + 1)
+      self.sigma = sigma
+
+    self.translated_d = None
+    self.offset_x = None
+    self.offset_y = None
+
+  def Normalize(self):
+    """Normalize the data present in self.data"""
+    for i, batch in enumerate(self.data):
+      if self.normalize[i]:
+        mean = self.means[i]
+        std = self.stds[i]
+        batch.add_col_mult(mean, mult=-1.0)
+        batch.div_by_col(std)
+
+  def LoadData(self):
+    """Load data from parent cache."""
+
+    # Ask parent for data.
+    data_cpu = self.parent.Get(self._maxpos)
+    datasize = data_cpu[0].shape[0]
+    assert datasize <= self._maxpos,\
+      "GPU cache can only store %d datapoints, but parent gave it %d." % (
+        self._maxpos, datasize)
+
+    self.datasize = datasize
+    for i, d in enumerate(data_cpu):
+      if sp.issparse(d):
+        mat = d.toarray().T
+      else:
+        mat = d.T
+      size = mat.shape[0] * mat.shape[1]
+      if size > self.allocated_memory_size[i]:
+        # If need more space, then allocate new matrix on the GPU.
+        self.data[i] = cm.CUDAMatrix(mat)
+        self.allocated_memory_size[i] = mat.shape[0] * mat.shape[1]
+      else:
+        # Overwrite old memory. It is ok if size of mat is less than the total
+        # space that has been allocated.
+        self.data[i].overwrite(mat)
+    self.Normalize()
+
+  def AddNoise(self, batch, i):
+    # Add gaussian noise to data at index i in batch.
+    batch[i].sample_gaussian(mult=self.sigma)
+
+  def TranslateData(self, batch, i):
+    """Applies translations to data at index i in batch."""
+    sizeX = self.sizeX
+    sizex = self.sizex
+    batchsize = batch[i].shape[1]
+    shift = (sizeX - sizex)/2
+    offset_x = np.array([random.choice(self.translate_range_x) + shift for k in range(batchsize)]).reshape(1, -1)
+    offset_y = np.array([random.choice(self.translate_range_y) + shift for k in range(batchsize)]).reshape(1, -1)
+    num_channels = self.num_channels
+
+    d = batch[i]
+
+    if self.offset_x is None:
+      self.offset_x = cm.CUDAMatrix(offset_x)
+    else:
+      self.offset_x.overwrite(offset_x)
+    if self.offset_y is None:
+      self.offset_y = cm.CUDAMatrix(offset_y)
+    else:
+      self.offset_y.overwrite(offset_y)
+    if self.translated_d is None or self.translated_d.shape[1] != batchsize:
+      self.translated_d = cm.empty((sizex**2 * num_channels, batchsize))
+    d.generate_translations(sizeX, sizex, self.offset_x, self.offset_y, target=self.translated_d)
+    batch[i] = self.translated_d
+
+  def ShuffleData(self):
+    """In-place shuffle the data in self.data."""
+    indices = np.arange(self.datasize)
+    np.random.shuffle(indices)
+    indices1 = indices[:self.datasize/2]
+    indices2 = indices[self.datasize/2:2*(self.datasize/2)]
+    indices1_gpu = cm.CUDAMatrix(indices1.reshape(1, -1))
+    indices2_gpu = cm.CUDAMatrix(indices2.reshape(1, -1))
+    for d in self.data:
+      d.swap_columns(indices1_gpu, indices2_gpu, target=d)
+    indices1_gpu.free_device_memory()
+    indices2_gpu.free_device_memory()
+
+  def SetDataStats(self, i, stats_file):
+    """Load stats for normalizing the data."""
+    assert os.path.exists(stats_file), 'Stats file %s not found.' % stats_file
+    stats = np.load(stats_file)
+    self.normalize[i] = True
+    self.means[i] = cm.CUDAMatrix(stats['mean'].reshape(-1, 1))
+    self.stds[i] = cm.CUDAMatrix(1e-10 + stats['std'].reshape(-1, 1))
+
+  def Get(self, batchsize, get_last_piece=False):
+    """Return 'batchsize' data points from the cache.
+    
+    May return fewer points towards the end of the dataset when there are fewer
+    than batchsize left.
+    """
+    skip = False
+    if self._pos == self.datasize:
+      self._pos = 0
+    if self._pos == 0:
+      if self.empty or self._maxpos < self.parent._maxpos:
+        self.LoadData()
+        self.empty = False
+      if self.randomize and self._maxpos == self.parent._maxpos:
+        # Shuffle if randomize is True and parent has not already shuffled it.
+        self.ShuffleData()
+    start = self._pos
+    end = self._pos + batchsize
+    if end > self.datasize:
+      end = self.datasize
+      skip = not get_last_piece
+    self._pos = end
+    if skip:
+      return self.Get(batchsize, get_last_piece=get_last_piece)
+    else:
+      batch = [d.slice(start, end) for d in self.data]
+      for i in range(self.num_data):
+        if self.add_noise[i]:
+          self.AddNoise(batch, i)
+        if self.translate[i]:
+          self.TranslateData(batch, i)
+      return batch
+
+def GetBytes(mem_str):
+  """Converts human-readable numbers to bytes.
+
+  E.g., converts '2.1M' to 2.1 * 1024 * 1024 bytes.
+  """
+  unit = mem_str[-1]
+  val = float(mem_str[:-1])
+  if unit == 'G':
+    val *= 1024*1024*1024
+  elif unit == 'M':
+    val *= 1024*1024
+  elif unit == 'K':
+    val *= 1024
+  else:
+    try:
+      val = int(mem_str)
+    except Exception:
+      print '%s is not a valid way of writing memory size.' % mem_str
+  return int(val)
+
+def GetDataHandles(op, names, hyp_list, verbose=False):
+  """Returns a list of data handles.
+
+  This method is the top-level routine for creating data handlers. It takes a
+  description of which datasets to load and returns data handlers to access
+  them.
+  Args:
+    op: Operation protocol buffer.
+    names: list of list of data names. The top level list corresponds to train,
+      validation and test sets. The lower-level lists correspond to data
+      modalities.
+    hyp_list: List of hyperparameters for each modality.
+    verbose: If True, will print out details of what is happening.
+  Returns:
+    A list of DataHandler objects.
+  """
+  typesize = 4
+  dataset_proto = util.ReadData(op.data_proto)
+  handlers = []
+  if dataset_proto.data_handler == 'deepnet':
+    size_list = []
+    for name_list in names:
+      size = 0
+      for name in name_list:
+        data_proto = next(d for d in dataset_proto.data if d.name == name)
+        datasetsize = data_proto.size
+        numdims = np.prod(np.array(data_proto.dimensions))
+        size += datasetsize * numdims * typesize
+      size_list.append(size)
+    total_size = sum(size_list)
+    proportions = [float(size)/total_size for size in size_list]
+    for i, name_list in enumerate(names):
+      if name_list == []:
+        handlers.append(None)
+      else:
+        handlers.append(DataHandler(op, name_list, hyp_list, frac=proportions[i]))
+  elif dataset_proto.data_handler == 'navdeep':
+    import navdeep_datahandler
+    for i, name_list in enumerate(names):
+      if name_list == []:
+        handlers.append(None)
+      else:
+        handlers.append(navdeep_datahandler.NavdeepDataHandler(
+          op, dataset_proto, name_list, hyp_list))
+
+  return handlers
 
 class DataHandler(object):
-
-  def __init__(self, name, proto, op, hyp, typesize=4,
-               boundary_proto=None, permutation_link=None):
-    self.name = name
-    batchsize = op.batchsize
-    randomize = op.randomize
-    skip_last_piece = op.skip_last_piece
-    filenames = sorted(glob.glob(proto.file_pattern))
-    self.num_batches = proto.size / batchsize
-    if not skip_last_piece and proto.size % batchsize > 0:
-      self.num_batches += 1
-    numdims = reduce(lambda a, x: a * x, proto.dimensions)
-    datasetsize = proto.size
-    disk_mem = datasetsize * typesize * numdims
-    gpu_blocksize = numdims * batchsize
-    gpu_mem = self.GetBytes(proto.gpu_memory)
-    gpu_mem = min(gpu_mem, disk_mem)
-    gpu_mem = AlignUp(gpu_mem, typesize * gpu_blocksize)
-    
-    main_mem = self.GetBytes(proto.main_memory)
-    main_mem = min(main_mem, disk_mem)
-    if main_mem < gpu_mem:
-      main_mem = gpu_mem
-    main_blocksize = gpu_mem / typesize
-    
-    disk_blocksize = main_mem / typesize
-
-    disk = Disk(name+'_disk', filenames, disk_mem, disk_blocksize, numdims=numdims)
-    disk.SetDataStats(proto, hyp.subtract_mean, hyp.divide_stddev)
-    if permutation_link:
-      link = permutation_link.main_memory_cache
-      _randomize = permutation_link.main_memory_cache.randomize
-    else:
-      link = None
-      _randomize = randomize
-    self.main_memory_cache = Cache(name+'_main_mem_cache', disk, main_mem,
-                                   disk_mem, main_blocksize, numdims=numdims,
-                                   randomize=_randomize, permutation_link=link)
-    if permutation_link:
-      link = permutation_link.gpu_cache
-      _randomize = permutation_link.gpu_cache.randomize
-    else:
-      link = None
-      _randomize = randomize and main_mem / gpu_mem == 1
-      # If main_mem is bigger then shuffling will take place on the cpu.
-    self.gpu_cache = Cache(name+'_gpu_cache', self.main_memory_cache, gpu_mem,
-                           main_mem, gpu_blocksize, gpu=True, numdims=numdims,
-                           randomize=_randomize, permutation_link=link)
-    
-    self.shape = list(tuple(proto.dimensions))
-    self.shape.append(batchsize)
-    self.numdims = numdims
-    self.batchsize = batchsize
-    self.skip_last_piece = skip_last_piece
-
-  def GetBytes(self, mem_str):
-    unit = mem_str[-1]
-    val = int(mem_str[:-1])
-    if unit == 'G':
-      val *= 1024*1024*1024
-    elif unit == 'M':
-      val *= 1024*1024
-    elif unit == 'K':
-      val *= 1024
-    return val
-
-  def Get(self):
-    """Return a batch after reshaping appropriately."""
-    s = self.gpu_cache.Get()
-    batchsize = s.shape[1] / self.numdims
-    if batchsize != self.batchsize and self.skip_last_piece:
-      return self.Get()
-    self.shape[-1] = batchsize
-    s.reshape(tuple(self.shape))
-    return s
-
-class SequentialDataHandler(DataHandler):
-
-  def __init__(self, name, proto, op, hyp, typesize=4, boundary_proto=None,
-               permutation_link=None):
-    self.name = name
-    batchsize = op.batchsize
-    skip_last_piece = op.skip_last_piece
-    if permutation_link:
-      left = 0
-      right = 0
-    else:
-      left = hyp.left_window
-      right = hyp.right_window
-    randomize = op.randomize
-    filenames = sorted(glob.glob(proto.file_pattern))
-    self.num_batches = proto.size / batchsize
-    if not skip_last_piece and proto.size % batchsize > 0:
-      self.num_batches += 1
-    numdims = reduce(lambda a, x: a * x, proto.dimensions)
-    datasetsize = proto.size
-    disk_mem = datasetsize * typesize * numdims
-    gpu_blocksize = numdims * batchsize
-    gpu_mem = self.GetBytes(proto.gpu_memory)
-    gpu_mem = min(gpu_mem, disk_mem)
-    gpu_mem = AlignUp(gpu_mem, typesize * gpu_blocksize)
-    
-    main_mem = self.GetBytes(proto.main_memory)
-    main_mem = min(main_mem, disk_mem)
-    if main_mem < gpu_mem:
-      main_mem = gpu_mem
-    main_blocksize = gpu_mem / typesize
-    
-    disk_blocksize = main_mem / typesize
-
-    disk = Disk(name+'_disk', filenames, disk_mem, disk_blocksize)
-    main_memory_cache = Cache(name+'_main_mem_cache', disk, main_mem,
-                              disk_mem, main_blocksize)
-
-    if permutation_link:
-      link = permutation_link.gpu_cache
-    else:
-      link = None
-    self.gpu_cache = SequentialCache(name+'_gpu_cache',main_memory_cache,
-                                     numdims, left, right,
-                                     gpu_mem, main_mem, gpu_blocksize,
-                                     gpu=True, randomize=randomize,
-                                     permutation_link=link)
-    self.shape = list(tuple(proto.dimensions))
-    self.shape.append(batchsize)
-    self.numdims = numdims
-    self.batchsize = batchsize
-    self.skip_last_piece = skip_last_piece
-
-  def Get(self):
-    """Return a batch after reshaping appropriately."""
-    s = self.gpu_cache.Get()
-    batchsize = s.shape[1]
-    if batchsize != self.batchsize and self.skip_last_piece:
-      return self.Get()
-    return s
-
-class SequentialCache(Cache):
-
-  def __init__(self, name, source, numdims, left, right,
-               capacity, parent_capacity, blocksize=1,
-               typesize=4, gpu=True, randomize=False, permutation_link=None,
-               verbose=False):
-    assert gpu, 'Sequential cache only works for GPU.'
-    super(SequentialCache, self).__init__(name, source, capacity,
-                                          parent_capacity, blocksize=blocksize,
-                                          typesize=typesize, gpu=True,
-                                          verbose=verbose)
-
-    batchsize = self.blocksize / numdims
-    self.batchsize = batchsize
-    self.numdims = numdims
-    self.left = left
-    self.right = right
-    self.numframes = 1 + left + right
-    self.position_template = cm.CUDAMatrix(np.tile(
-      np.arange(-left, right + 1, 1.0).reshape(-1, 1), (1, batchsize)))
-    self.positions = cm.CUDAMatrix(np.zeros((self.numframes, batchsize)))
-    self.output = cm.CUDAMatrix(np.zeros((self.numframes * self.numdims,
-                                          batchsize)))
-    self.randomize = randomize
-    self.permutation_link = permutation_link
-    if permutation_link:
-      self.indices = self.permutation_link.indices
-      if self.verbose:
-        print '%s -> %s' % (self.name, self.permutation_link.name)
-    else:
-      self.indices = cm.CUDAMatrix(np.zeros(batchsize).reshape(1, -1))
-      if not randomize:
-        self.indices_init = cm.CUDAMatrix(
-          np.arange(batchsize).reshape(1, -1) - batchsize)
-
-  def Get(self, batchsize=None):
-    if batchsize and batchsize != self.batchsize:
-      self.batchsize = batchsize
-    if self._position >= self.current_size or self._data is None:
-      self._position = 0
-      if not self.permutation_link and not self.randomize:
-        self.indices.assign(self.indices_init)
-      if self.num_blocks > 1 or self._data is None:
-        if self.verbose:
-          print 'CACHE MISS in %s' % self.name
-        if self._data:
-          self._data.free_device_memory()
-        self._data = cm.CUDAMatrix(
-          self.source.Get((self.capacity)).reshape(1, -1))
-        size = self._data.shape[1]
-        self._data.reshape((self.numdims, size / self.numdims))
-        self.current_size = self._data.shape[1]
-    positions = self.positions
-    position_template = self.position_template
-    numframes = self.numframes
-    output = self.output
-    batchsize = self.batchsize
-    numdims = self.numdims
-    indices = self.indices
-    if not self.permutation_link:
-      if self.randomize:
-        indices.fill_with_rand()
-        indices.mult(self.current_size)
+  """Data handling class."""
+  def __init__(self, op, data_name_list, hyperparameter_list, frac=1.0):
+    """Initializes a DataHandler.
+    Args:
+      op: Operation protocol buffer.
+      data_name_list: List of data names that should be put together. (Usually
+        refers to a list of different modalities, e.g., ['data', 'label'] or
+        ['image', 'audio'].)
+      hyperparameter_list: List of hyperparameters, one for each modality.
+      frac: What fraction of the total memory should this data handler use.
+    """
+    filenames = []
+    numdim_list = []
+    datasetsize = None
+    left_window = []
+    right_window = []
+    stats_files = []
+    shift = []
+    add_noise = []
+    shift_amt_x = []
+    shift_amt_y = []
+    keys = []
+    typesize = 4
+    if isinstance(op, str):
+      op = util.ReadOperation(op)
+    self.verbose = op.verbose
+    verbose = self.verbose
+    dataset_proto = util.ReadData(op.data_proto)
+    seq = False
+    is_train = False
+    for name, hyp in zip(data_name_list, hyperparameter_list):
+      data_proto = next(d for d in dataset_proto.data if d.name == name)
+      filenames.append(sorted(glob.glob(data_proto.file_pattern)))
+      stats_files.append(data_proto.stats_file)
+      numdims = np.prod(np.array(data_proto.dimensions))
+      if not data_proto.sparse:
+        numdims *= data_proto.num_labels
+      numdim_list.append(numdims)
+      seq = seq or data_proto.seq
+      left_window.append(hyp.left_window)
+      right_window.append(hyp.right_window)
+      add_noise.append(hyp.add_noise)
+      shift.append(hyp.shift)
+      shift_amt_x.append(hyp.shift_amt_x)
+      shift_amt_y.append(hyp.shift_amt_y)
+      keys.append(data_proto.key)
+      is_train = 'train' in name  # HACK - Fix this!
+      if datasetsize is None:
+        datasetsize = data_proto.size
       else:
-        indices.add(self.batchsize)
-    self._position += self.batchsize
-    last_piece = False
-    if self._position > self.current_size:
-      last_piece = True
-      span = self.current_size - self._position + batchsize
-    position_template.add_row_vec(indices, target=positions)
-    positions.reshape((1, numframes * batchsize))
+        assert datasetsize == data_proto.size, 'Size of %s is not %d' % (
+          name, datasetsize)
 
-    output.reshape((numdims, numframes * batchsize))
-    self._data.select_columns(positions, target=output)
-    output.reshape((numdims * numframes, batchsize))
-    positions.reshape((numframes, batchsize))
-    if last_piece:
-      return output.slice(0, span)
-    return output
+    # Add space for padding.
+    if seq:
+      max_rw = max(right_window)
+      max_lw = max(left_window)
+      actual_datasetsize = datasetsize
+      datasetsize += len(filenames[0]) * (max_rw + max_lw)
 
-
-class SparseDataHandler(DataHandler):
-  def __init__(self, name, proto, op, hyp, typesize=4,
-               boundary_proto=None, permutation_link=None):
-    assert proto.sparse, "This class is meant for sparse data sets only."
-    self.name = name
+    numdims = sum(numdim_list)
     batchsize = op.batchsize
     randomize = op.randomize
-    skip_last_piece = op.skip_last_piece
-    filenames = sorted(glob.glob(proto.file_pattern))
-    assert len(filenames) == 1, filenames
-    filename = filenames[0]
-    self.num_batches = proto.size / batchsize
-    if not skip_last_piece and proto.size % batchsize > 0:
-      self.num_batches += 1
-    numdims = reduce(lambda a, x: a * x, proto.dimensions) * proto.num_labels
-    datasetsize = proto.size
+    self.get_last_piece = op.get_last_piece
+    # Compute size of each cache.
+    total_disk_space = datasetsize * numdims * typesize
+    max_gpu_capacity = int(frac*GetBytes(dataset_proto.gpu_memory))
+    max_cpu_capacity = int(frac*GetBytes(dataset_proto.main_memory))
 
-    gpu_blocksize = numdims * batchsize
-    gpu_mem = self.GetBytes(proto.gpu_memory)
-    gpu_mem = AlignUp(gpu_mem, typesize * gpu_blocksize)
-   
-    main_mem = datasetsize * numdims * typesize
-    print datasetsize, numdims, main_mem, gpu_mem
-    main_blocksize = gpu_mem / typesize
+    # Each capacity should correspond to integral number of batches.
+    vectorsize_bytes = typesize * numdims
+    batchsize_bytes = vectorsize_bytes * batchsize
+    max_gpu_capacity = (max_gpu_capacity / batchsize_bytes) * batchsize_bytes
+    max_cpu_capacity = (max_cpu_capacity / batchsize_bytes) * batchsize_bytes
 
-    if permutation_link:
-      link = permutation_link.main_memory_cache
-    else:
-      link = None
-    self.sparse_memory_cache = SparseCache(name + '_sparse_cache', filename,
-                                           main_blocksize, numdims,
-                                           randomize=randomize,
-                                           permutation_link=link)
-    if permutation_link:
-      link = permutation_link.gpu_cache
-    else:
-      link = None
+    # Don't need more than total dataset size.
+    gpu_capacity = min(total_disk_space, max_gpu_capacity) 
+    cpu_capacity = min(total_disk_space, max_cpu_capacity) 
+    num_gpu_batches = gpu_capacity / batchsize_bytes
+    num_cpu_batches = cpu_capacity / batchsize_bytes
 
-    _randomize = randomize and main_mem / gpu_mem == 1
+    gpu_left_overs = gpu_capacity / vectorsize_bytes - num_gpu_batches * batchsize
+    cpu_left_overs = cpu_capacity / vectorsize_bytes - num_cpu_batches * batchsize
     
-    self.gpu_cache = Cache(name+'_gpu_cache', self.sparse_memory_cache,
-                           gpu_mem, main_mem, gpu_blocksize, gpu=True,
-                           numdims=numdims,
-                           randomize=_randomize, permutation_link=link)
-    self.shape = list(tuple(proto.dimensions))
-    self.shape[-1] *= proto.num_labels
-    print '%s %s' % (self.name, self.shape)
-    self.shape.append(batchsize)
-    self.numdims = numdims
+    if self.verbose:
+      if seq:
+        num_valid_gpu_vectors = (gpu_capacity/vectorsize_bytes) - len(filenames[0])*(max_rw+max_lw)
+        print num_valid_gpu_vectors
+
+      else:
+        print 'Batches in GPU memory: %d + leftovers %d' % (num_gpu_batches,
+                                                            gpu_left_overs)
+        print 'Batches in main memory: %d + leftovers %d' % (num_cpu_batches,
+                                                             cpu_left_overs)
+        print 'Batches in disk: %d + leftovers %d' % ((datasetsize / batchsize),
+                                                      datasetsize % batchsize)
+    
+    if seq:
+      import sequence_datahandler as seq_dh
+      self.disk = seq_dh.SequenceDisk(
+        filenames, numdim_list, datasetsize, keys=keys, left_window=left_window,
+        right_window=right_window, verbose=verbose)
+      self.cpu_cache = seq_dh.SequenceCache(
+        self.disk, cpu_capacity, numdim_list, typesize = typesize,
+        randomize=randomize, left_window=left_window,
+        right_window=right_window, verbose=verbose)
+      self.gpu_cache = seq_dh.SequenceGPUCache(
+        self.cpu_cache, gpu_capacity, numdim_list, typesize = typesize,
+        randomize=randomize, left_window=left_window,
+        right_window=right_window, verbose=verbose, batchsize=batchsize)
+    else:
+      self.disk = Disk(filenames, numdim_list, datasetsize, keys=keys,
+                       verbose=self.verbose)
+      self.cpu_cache = Cache(self.disk, cpu_capacity, numdim_list,
+                             typesize = typesize, randomize=randomize,
+                             verbose=self.verbose)
+      self.gpu_cache = GPUCache(self.cpu_cache, gpu_capacity, numdim_list,
+                                typesize = typesize, randomize=randomize,
+                                verbose=self.verbose, shift=shift, add_noise=add_noise,
+                                center_only=not is_train, shift_amt_x=shift_amt_x, shift_amt_y=shift_amt_y)
+    for i, stats_file in enumerate(stats_files):
+      if hyperparameter_list[i].normalize:
+        self.gpu_cache.SetDataStats(i, stats_file)
     self.batchsize = batchsize
-    self.skip_last_piece = skip_last_piece
+    if seq:
+      datasetsize = actual_datasetsize
+    self.num_batches = datasetsize / batchsize
+    if self.get_last_piece and datasetsize % batchsize > 0:
+      self.num_batches += 1
 
-class SparseCache(Cache):
-
-  @staticmethod
-  def LoadSparse(inputfile):
-    print 'Reading from disk %s' % inputfile
-    npzfile = np.load(inputfile)
-    mat = scipy.sparse.csr_matrix((npzfile['data'], npzfile['indices'],
-                                  npzfile['indptr']),
-                                  shape=tuple(list(npzfile['shape'])))
-    print 'Loaded sparse matrix from %s of shape %s' % (inputfile,
-                                                        mat.shape.__str__())
-    return mat
-
-  def __init__(self, name, sparse_data_file, blocksize, numdims,
-               randomize=False, permutation_link=None):
-    self.name = name
-    self.data = None
-    self.sparse_data_file = sparse_data_file
-    self.batchsize = blocksize / numdims
-    self.randomize = randomize
-    self.permutation_link = permutation_link
-
-  def Shuffle(self):
-    if self.permutation_link is None:
-      self.indices = np.arange(self.data.shape[0])
-      np.random.shuffle(self.indices)
-      self.data = self.data[self.indices,:]
+  def Get(self):
+    """Returns a list of minibatches on the GPU.
+    Each element of the list corresponds to one modality.
+    """
+    batch = self.gpu_cache.Get(self.batchsize, get_last_piece=self.get_last_piece)
+    return batch
+    """
+    if batch[0].shape[1] == self.batchsize or self.get_last_piece:
+      if batch[0].shape[1] != self.batchsize:
+        pdb.set_trace()
+      return batch
     else:
-      self.data = self.data[self.permutation_link.indices,:]
+      return self.Get()
+    """
+
+  def GetCPUBatches(self):
+    """Returns batches from main memory."""
+    batch = self.cpu_cache.Get(self.batchsize)
+    return batch
 
 
-  def Get(self, capacity):
-    if self.data is None:
-      self.data = SparseCache.LoadSparse(self.sparse_data_file)
-      self._position = 0
-      self.max_position = self.data.shape[0]
-      if self.randomize:
-        self.Shuffle()
-    if self._position >= self.max_position:
-      assert self._position == self.max_position
-      self._position = 0
-      if self.randomize:
-        self.Shuffle()
-    if self._position + self.batchsize > self.max_position:
-      this_batchsize = self.max_position - self._position
-    else:
-      this_batchsize = self.batchsize
-    d = self.data[self._position:self._position + this_batchsize, :].toarray()
-    self._position += this_batchsize
-    return d
+class DataWriter(object):
+  """Class for writing lots of data to disk."""
+
+  def __init__(self, names, output_dir, memory, numdim_list, datasize=None):
+    """Initializes a Data Writer.
+    Args:
+      names: Names used to identify the different data components. Will be used
+        as prefixes for the output files.
+      output_dir: Directory where the data will be written.
+      memory: Size of each output chunk.
+      numdim_list: Number of dimensions in each data component.
+      datasize: Total number of data vectors that will be written. Having this
+        number helps to save memory.
+    """
+    typesize = 4  # Fixed for now.
+    self.typesize = typesize
+    self.names = names
+    self.output_dir = output_dir
+    if not os.path.isdir(output_dir):
+      os.makedirs(output_dir)
+    self.numdim_list = numdim_list
+    self.data_len = len(names)
+    assert self.data_len == len(numdim_list)
+    numdims = sum(numdim_list)
+    total_memory = GetBytes(memory)
+    if datasize is not None:
+      total_memory_needed = datasize * typesize * numdims
+      total_memory = min(total_memory, total_memory_needed)
+    self.buffer_index = [0] * self.data_len
+    self.dump_count = [0] * self.data_len
+    self.max_dumps = []
+    self.buffers = []
+    for numdim in numdim_list:
+      memory = (total_memory * numdim) / numdims
+      numvecs = memory / (typesize * numdim)
+      data = np.zeros((numvecs, numdim), dtype='float32')
+      self.buffers.append(data)
+      if datasize is not None:
+        max_dump = datasize / numvecs
+        if datasize % numvecs > 0:
+          max_dump += 1
+        self.max_dumps.append(max_dump)
+      else:
+        self.max_dumps.append(1)
+
+  def AddToBuffer(self, i, data):
+    """Add data into buffer i."""
+    buf = self.buffers[i]
+    buf_index = self.buffer_index[i]
+    datasize = data.shape[0]
+    if datasize + buf_index <= buf.shape[0]:
+      buf[buf_index:buf_index + datasize] = data
+      self.buffer_index[i] += datasize
+
+  def HasSpace(self, i, datasize):
+    """Return True if buffer i has space to add datasize more vectors."""
+    buf = self.buffers[i]
+    buf_index = self.buffer_index[i]
+    return buf.shape[0] >= buf_index + datasize
+  
+  def DumpBuffer(self, i):
+    """Write the contents of buffer i to disk."""
+    buf_index = self.buffer_index[i]
+    if buf_index == 0:
+      return
+    buf = self.buffers[i]
+    output_prefix = os.path.join(self.output_dir, self.names[i])
+    output_filename = '%s-%.5d-of-%.5d' % (
+      output_prefix, (self.dump_count[i]+1), self.max_dumps[i])
+    self.dump_count[i] += 1
+    np.save(output_filename, buf[:buf_index])
+    self.buffer_index[i] = 0
+
+  def Submit(self, data):
+    assert len(data) == self.data_len
+    for i, d in enumerate(data):
+      datasize = d.shape[0]
+      if not self.HasSpace(i, datasize):
+        self.DumpBuffer(i)
+      self.AddToBuffer(i, d)
+
+  def Commit(self):
+    for i in range(self.data_len):
+      self.DumpBuffer(i)

@@ -7,12 +7,12 @@ import numpy as np
 import os.path
 import shutil
 import time
-
+import pdb
 from google.protobuf import text_format
 
 def ParameterAsNumpy(param):
   """Converts a serialized parameter string into a numpy array."""
-  return np.fromstring(param.mat, dtype='float32').reshape(
+  return param.mult_factor * np.fromstring(param.mat, dtype='float32').reshape(
     *tuple(param.dimensions))
 
 def NumpyAsParameter(numpy_array):

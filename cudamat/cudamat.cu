@@ -251,6 +251,15 @@ extern int free_device_memory(cudamat* mat) {
     return 0;
 }
 
+extern int set_shape(cudamat* mat, unsigned int m, unsigned int n) {
+
+    mat->size[0] = m;
+    mat->size[1] = n;
+
+    return 0;
+}
+
+
 extern int reshape(cudamat* mat, unsigned int m, unsigned int n) {
     if (mat->size[0] * mat->size[1] != m * n)
         return ERROR_INCOMPATIBLE_DIMENSIONS;
@@ -335,6 +344,10 @@ extern void init_from_array(cudamat* mat, float* data, int m, int n) {
     mat->on_host = 1;
     mat->is_trans = 0;
     mat->owns_data = 1;
+}
+
+extern void set_on_device(cudamat* mat) {
+  mat->on_device = 1;
 }
 
 extern int init_empty(cudamat* mat, int m, int n) {
@@ -746,6 +759,53 @@ extern int greater_than(cudamat* mat1, cudamat* mat2, cudamat* target) {
     return 0;
 }
 
+extern int upper_bound(cudamat* mat1, cudamat* mat2, cudamat* target) {
+    int len = mat1->size[0]*mat1->size[1];
+
+    if (!mat1->on_device || !mat2->on_device || !target->on_device)
+        return ERROR_NOT_ON_DEVICE;
+
+    if (mat1->is_trans != mat2->is_trans)
+        return ERROR_TRANSPOSEDNESS;
+
+    if (mat1->size[0] != mat2->size[0] || mat1->size[1] != mat2->size[1] ||
+        mat1->size[0] != target->size[0] || mat1->size[1] != target->size[1])
+        return ERROR_INCOMPATIBLE_DIMENSIONS;
+
+    kUpperBound<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(mat1->data_device, mat2->data_device, target->data_device, len);
+
+    cudaThreadSynchronize();
+
+    if (checkCUDAError())
+        return CUDA_ERROR;
+
+    return 0;
+}
+
+
+extern int lower_bound(cudamat* mat1, cudamat* mat2, cudamat* target) {
+    int len = mat1->size[0]*mat1->size[1];
+
+    if (!mat1->on_device || !mat2->on_device || !target->on_device)
+        return ERROR_NOT_ON_DEVICE;
+
+    if (mat1->is_trans != mat2->is_trans)
+        return ERROR_TRANSPOSEDNESS;
+
+    if (mat1->size[0] != mat2->size[0] || mat1->size[1] != mat2->size[1] ||
+        mat1->size[0] != target->size[0] || mat1->size[1] != target->size[1])
+        return ERROR_INCOMPATIBLE_DIMENSIONS;
+
+    kLowerBound<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(mat1->data_device, mat2->data_device, target->data_device, len);
+
+    cudaThreadSynchronize();
+
+    if (checkCUDAError())
+        return CUDA_ERROR;
+
+    return 0;
+}
+
 extern int greater_than_scalar(cudamat* mat, float val, cudamat* target) {
     int len = mat->size[0]*mat->size[1];
 
@@ -767,6 +827,51 @@ extern int greater_than_scalar(cudamat* mat, float val, cudamat* target) {
 
     return 0;
 }
+extern int upper_bound_scalar(cudamat* mat, float val, cudamat* target) {
+    int len = mat->size[0]*mat->size[1];
+
+    if (!mat->on_device || !target->on_device)
+        return ERROR_NOT_ON_DEVICE;
+
+    if (mat->is_trans != target->is_trans)
+        return ERROR_TRANSPOSEDNESS;
+
+    if (mat->size[0] != target->size[0] || mat->size[1] != target->size[1])
+        return ERROR_INCOMPATIBLE_DIMENSIONS;
+
+    kUpperBoundScalar<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(mat->data_device, val, target->data_device, len);
+
+    cudaThreadSynchronize();
+
+    if (checkCUDAError())
+        return CUDA_ERROR;
+
+    return 0;
+}
+
+
+extern int lower_bound_scalar(cudamat* mat, float val, cudamat* target) {
+    int len = mat->size[0]*mat->size[1];
+
+    if (!mat->on_device || !target->on_device)
+        return ERROR_NOT_ON_DEVICE;
+
+    if (mat->is_trans != target->is_trans)
+        return ERROR_TRANSPOSEDNESS;
+
+    if (mat->size[0] != target->size[0] || mat->size[1] != target->size[1])
+        return ERROR_INCOMPATIBLE_DIMENSIONS;
+
+    kLowerBoundScalar<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(mat->data_device, val, target->data_device, len);
+
+    cudaThreadSynchronize();
+
+    if (checkCUDAError())
+        return CUDA_ERROR;
+
+    return 0;
+}
+
 
 extern int max_by_axis(cudamat* mat, cudamat* target, int axis) {
     unsigned int h = mat->size[0],
@@ -792,6 +897,31 @@ extern int max_by_axis(cudamat* mat, cudamat* target, int axis) {
         return CUDA_ERROR;
 
     return 0;
+}
+
+extern float sum_all(cudamat* mat, int* err_code) {
+    unsigned int len = mat->size[0]*mat->size[1];
+
+    if (!mat->on_device) {
+        *err_code = ERROR_NOT_ON_DEVICE;
+        return -1.;
+    }
+
+    if (mat->is_trans) {
+        *err_code = ERROR_TRANSPOSED;
+        return -1.;
+    }
+    kSumAll<<<1,32>>>(mat->data_device, len);
+    cudaThreadSynchronize();
+    typeof(device_val) res;
+    cudaMemcpyFromSymbol(&res, "device_val", sizeof(res), 0, cudaMemcpyDeviceToHost);
+    if (checkCUDAError()) {
+        *err_code = CUDA_ERROR;
+        return -1.;
+    } else {
+        *err_code = 0;
+        return res;
+    }
 }
 
 extern int argmax_by_axis(cudamat* mat, cudamat* target, int axis) {
@@ -1517,7 +1647,6 @@ extern float euclid_norm(cudamat* mat, int* err_code) {
         return res;
     }
 }
-
 extern int selectRows(cudamat* source, cudamat* target, cudamat* indices){
     const int nRetRows = indices->size[1];
 
@@ -1527,6 +1656,23 @@ extern int selectRows(cudamat* source, cudamat* target, cudamat* indices){
     dim3 blockDim(32);
 
     kSelectRows<<<gridDim, blockDim>>>(source->data_device, target->data_device, indices->data_device, nRetRows, source->size[0], source->size[1]);
+    cudaThreadSynchronize();
+
+    if (checkCUDAError())
+        return CUDA_ERROR;
+    else
+        return 0;
+}
+
+extern int swapRows(cudamat* source, cudamat* target, cudamat* indices1, cudamat* indices2){
+    const int nRetRows = indices1->size[1];
+
+    if (nRetRows==0) return 0;
+
+    dim3 gridDim((nRetRows+31)/32);
+    dim3 blockDim(32);
+
+    kSwapRows<<<gridDim, blockDim>>>(source->data_device, target->data_device, indices1->data_device, indices2->data_device, nRetRows, source->size[0], source->size[1]);
     cudaThreadSynchronize();
 
     if (checkCUDAError())
@@ -1553,4 +1699,24 @@ extern int setSelectedRows(cudamat* target, cudamat* source, cudamat* indices){
         return 0;
 }
 
+extern int generate_translations_big_var_off(cudamat* source, cudamat* target, cudamat* off_x, cudamat* off_y, int source_w, int target_w, int num_channels) {
+    dim3 kernelBlockGrid(source->size[1], 1, 1);
+    dim3 kernelBlockDim(512, 1, 1);
+
+    kGenerateTranslationsBigVarOff<<<kernelBlockGrid, kernelBlockDim>>>(source->data_device, target->data_device, off_x->data_device, off_y->data_device, source_w, target_w, num_channels);
+
+    if (checkCUDAError())
+        return CUDA_ERROR;
+
+    return 0;
+}
+
+extern int blockify(cudamat* source, cudamat* target, int blocksize) {
+    dim3 kernelBlockGrid(source->size[1], 1, 1);
+    dim3 kernelBlockDim(512, 1, 1);
+    kBlockify<<<kernelBlockGrid, kernelBlockDim>>>(source->data_device, target->data_device, source->size[0], blocksize);
+    if (checkCUDAError())
+        return CUDA_ERROR;
+    return 0;
+}
 }

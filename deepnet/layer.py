@@ -3,8 +3,10 @@ import cudamat as cm
 import deepnet_pb2
 import logging
 import numpy as np
+import os.path
 import util
 import visualize
+import pdb
 
 from cudamat_conv import cudamat_conv2 as cc
 
@@ -29,6 +31,7 @@ class Layer(object):
     self.activation = proto.hyperparams.activation
     self.is_input = proto.is_input
     self.is_output = proto.is_output
+    self.is_initialized = False
     self.loss_function = proto.loss_function
     self.train_data_handler = None
     self.validation_data_handler = None
@@ -37,10 +40,10 @@ class Layer(object):
     self.data = None
     self.deriv = None
     self.suff_stats = None
+    self.learn_precision = False
     self.LoadParams(proto)
     self.marker = 0
     self.fig = visualize.GetFigId()
-    self.fig_neg = visualize.GetFigId()
     self.pos_phase = True
     self.tiny = 1e-10
     self.replicated_neighbour = None
@@ -71,13 +74,17 @@ class Layer(object):
     else:
       self.data.assign(self.tied_to.data)
 
+  def SetData(self, data):
+    self.data = data
+
   def GetTrainData(self):
     if self.tied_to is None:
       self.data = self.train_data_handler.Get()
     else:
       self.data.assign(self.tied_to.data)
 
-  def Show(self):
+  def Show(self, train=False):
+    """Displays useful statistics about the model."""
     if not self.proto.hyperparams.enable_display:
       return
     """
@@ -97,24 +104,14 @@ class Layer(object):
                             10, self.batchsize/10, self.fig, title='data')
     else:
     """
+    f = 1
+    if self.hyperparams.dropout and not train:
+      f = 1 / (1 - self.hyperparams.dropout_prob)
     if self.is_input:
       visualize.display_hidden(self.data.asarray(), self.fig, title=self.name)
     else:
-      visualize.display_hidden(self.pos_state.asarray(), 2*self.fig, title=self.name + "_positive")
-      visualize.display_hidden(self.neg_state.asarray(), 2*self.fig_neg, title=self.name + "_negative")
+      visualize.display_hidden(f*self.state.asarray(), self.fig, title=self.name)
       #visualize.display_hidden(self.params['bias'].asarray(), 2*self.fig_neg, title=self.name + "_bias")
-      visualize.display_w(self.pos_state.asarray(), self.proto.shape[0],
-                          self.batchsize, 1, 2*self.fig+1,
-                          title=self.name + "_positive", vmin=0, vmax=1)
-      visualize.display_w(self.neg_sample.asarray(), self.proto.shape[0],
-                          self.batchsize, 1, 2*self.fig_neg+1,
-                          title=self.name + "_negative", vmin=0, vmax=1)
-      """
-      try:
-        visualize.display_hidden(self.neg_state.asarray(), self.fig_neg, title=self.name + "_negative")
-      except Exception as e:
-        print 'Problem displaying %s_negative' % self.name
-      """
 
   def InitializeParameter(self, param):
     if param.initialization == deepnet_pb2.Parameter.CONSTANT:
@@ -127,15 +124,22 @@ class Layer(object):
         node_name = self.proto.name
       mat = None
       for pretrained_model in param.pretrained_model:
-        model = util.ReadModel(pretrained_model)
-        # Find the relevant node in the model.
-        node = next(n for n in model.layer if n.name == node_name)
-        # Find the relevant parameter in the node.
-        pretrained_param = next(p for p in node.param if p.name == param.name)
-        assert pretrained_param.mat != '',\
-                'Pretrained param %s in layer %s of model %s is empty!!' % (
-                  pretrained_param.name, node.name, pretrained_model)
-        this_mat = util.ParameterAsNumpy(pretrained_param)
+        if os.path.splitext(pretrained_model)[1] == '.npz':
+          npzfile = np.load(pretrained_model)
+          if param.name == 'bias':
+            this_mat = np.nan_to_num(npzfile['mean'] / npzfile['std'])
+          elif param.name == 'precision':
+            this_mat = np.nan_to_num(1. / npzfile['std'])
+        else:
+          model = util.ReadModel(pretrained_model)
+          # Find the relevant node in the model.
+          node = next(n for n in model.layer if n.name == node_name)
+          # Find the relevant parameter in the node.
+          pretrained_param = next(p for p in node.param if p.name == param.name)
+          assert pretrained_param.mat != '',\
+                  'Pretrained param %s in layer %s of model %s is empty!!' % (
+                    pretrained_param.name, node.name, pretrained_model)
+          this_mat = util.ParameterAsNumpy(pretrained_param)
         if mat is None:
           mat = this_mat
         else:
@@ -147,21 +151,25 @@ class Layer(object):
   def LoadParams(self, proto):
     self.hyperparams = proto.hyperparams
     param_names = [param.name for param in proto.param]
+    """
     for param in proto.param:
       if 'grad_'+param.name not in param_names and not param.name.startswith(
         'grad_'):
         grad_p = deepnet_pb2.Parameter()
         grad_p.name = 'grad_'+param.name
         proto.param.extend([grad_p])
-
+    """
     for param in proto.param:
       if not param.dimensions:
-         param.dimensions.extend([proto.numlabels * proto.dimensions])
-      if param.mat and 'grad' not in param.name:
+        param.dimensions.extend([proto.numlabels * proto.dimensions])
+      if param.mat:# and 'grad' not in param.name:
         mat = util.ParameterAsNumpy(param).reshape(-1, 1)
       else:
         mat = self.InitializeParameter(param).reshape(-1, 1)
       self.params[param.name] = cm.CUDAMatrix(mat)
+      if param.name == 'bias':
+        self.grad_bias = cm.empty(mat.shape)
+        self.grad_bias.assign(0)
 
   def AddIncomingEdge(self, edge):
     if edge not in self.incoming_edge:
@@ -189,40 +197,46 @@ class Layer(object):
       print "Outgoing edge to %d (%s)" % (n.id, n.name)
 
   def AllocateMemory(self, batchsize):
+    self.AllocateBatchsizeDependentMemory(batchsize)
+    dimensions = self.dimensions
+    numlabels = self.numlabels
+    self.unitcell = cm.CUDAMatrix(np.zeros((1,1)))
+    self.dimsize = cm.CUDAMatrix(np.zeros((numlabels * dimensions, 1)))
+    if self.hyperparams.sparsity:
+      tgt = self.hyperparams.sparsity_target
+      self.means = cm.CUDAMatrix(tgt + np.zeros((numlabels * dimensions, 1)))
+      self.means_temp = cm.CUDAMatrix(np.zeros((numlabels * dimensions, 1)))
+      self.means_temp2 = cm.CUDAMatrix(np.zeros((numlabels * dimensions, 1)))
+    if self.activation == deepnet_pb2.Hyperparams.SOFTMAX or\
+       self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+      self.expansion_matrix = cm.CUDAMatrix(np.eye(numlabels))
+
+  def AllocateBatchsizeDependentMemory(self, batchsize):
+    self.batchsize = batchsize
     if self.data:
       self.data.free_device_memory()
     if self.deriv:
       self.deriv.free_device_memory()
+    dimensions = self.dimensions
+    numlabels = self.numlabels
     if self.is_input or self.is_output:
-      self.data = cm.CUDAMatrix(np.zeros((self.dimensions, batchsize)))
-    self.deriv = cm.CUDAMatrix(np.zeros((self.numlabels * self.dimensions,
-                                         batchsize)))
-    self.state = cm.CUDAMatrix(np.zeros((self.numlabels * self.dimensions,
-                                         batchsize)))
-    self.temp = cm.CUDAMatrix(np.zeros((self.dimensions, batchsize)))
-
-    if self.hyperparams.sparsity:
-      self.means = cm.CUDAMatrix(0.5 + np.zeros(
-        (self.numlabels * self.dimensions, 1)))
-      self.means_temp = cm.CUDAMatrix(np.zeros(
-        (self.numlabels * self.dimensions, 1)))
-
+      self.data = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
+    self.deriv = cm.CUDAMatrix(np.zeros((numlabels * dimensions, batchsize)))
+    self.state = cm.CUDAMatrix(np.zeros((numlabels * dimensions, batchsize)))
+    self.temp = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
     if self.activation == deepnet_pb2.Hyperparams.SOFTMAX or\
        self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
-      self.expansion_matrix = cm.CUDAMatrix(np.eye(self.numlabels))
       self.expanded_batch = cm.CUDAMatrix(np.zeros(
-        (self.numlabels * self.dimensions, batchsize)))
+        (numlabels * dimensions, batchsize)))
     if self.loss_function == deepnet_pb2.Layer.CROSS_ENTROPY:
-      self.unitcell = cm.CUDAMatrix(np.zeros((1,1)))
       if self.activation == deepnet_pb2.Hyperparams.SOFTMAX:
-        self.temp2 = cm.CUDAMatrix(np.zeros((self.dimensions, batchsize)))
-        self.indices = cm.CUDAMatrix(np.zeros((1,self.dimensions * batchsize)))
+        self.temp2 = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
+        self.indices = cm.CUDAMatrix(np.zeros((1, dimensions * batchsize)))
         self.rowshift = cm.CUDAMatrix(
-          self.numlabels*np.arange(self.dimensions * batchsize).reshape(1, -1))
-      elif self.activation == deepnet_pb2.Hyperparams.LOGISTIC:
-        self.temp3 = cm.CUDAMatrix(np.zeros((self.dimensions, 1)))
+          numlabels*np.arange(dimensions * batchsize).reshape(1, -1))
     if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
-      self.NN = cm.CUDAMatrix(self.hyperparams.normalize_to + np.zeros((1, batchsize)))
+      norm_to = self.hyperparams.normalize_to
+      self.NN = cm.CUDAMatrix(norm_to + np.zeros((1, batchsize)))
     if self.hyperparams.dropout:
       self.mask = cm.CUDAMatrix(np.zeros(self.state.shape))
 
@@ -252,7 +266,11 @@ class Layer(object):
       state.sample_poisson(target=sample)
     elif self.activation == deepnet_pb2.Hyperparams.LINEAR:
       #sample.assign(state)
-      state.sample_gaussian(target=sample, mult=0.01)
+      if self.learn_precision:
+        sample.fill_with_randn()
+        sample.div_by_col(self.params['precision'])
+        sample.add(state)
+      #state.sample_gaussian(target=sample, mult=0.01)
     elif self.activation == deepnet_pb2.Hyperparams.SOFTMAX:
       sample.fill_with_rand()
       cm.log(sample)
@@ -330,34 +348,49 @@ class Layer(object):
 
     f, numdims = w.shape
     assert f == num_filters, 'f is %d but num_filters is %d' % (f, num_filters)
-    assert numdims == size**2 * num_colors
+    if edge.conv:
+      assert numdims == size**2 * num_colors
 
     input_t = edge.input_t
+    inputs.transpose(input_t)
+    # Convolve Up.
     if conv.max_pool:
       output_t = edge.unpooled_layer
+    elif conv.rnorm:
+      output_t = edge.unrnormalized_layer
     else:
       output_t = edge.output_t
+
     numimages, numdims = input_t.shape
     numimages2, numdims2 = output_t.shape
-
-    assert numimages == numimages2, '%d %d' % (numimages, numimages2)
-
+    assert numimages == numimages2, '%d %d.' % (numimages, numimages2)
     assert numdims % num_colors == 0
     x = int(np.sqrt(numdims / num_colors))
     assert x**2 == numdims/num_colors
-
     n_locs = (x + 2 * padding - size) / stride + 1
-
-    inputs.transpose(input_t)
-    cc.convUp(input_t, w, output_t, n_locs, padding, stride, num_colors)
+    if edge.conv:
+      cc.convUp(input_t, w, output_t, n_locs, padding, stride, num_colors)
+    else:
+      cc.localUp(input_t, w, output_t, n_locs, padding, stride, num_colors)
 
     # Do maxpooling
     if conv.max_pool:
-      n_locs = (n_locs + 2 * padding - conv.pool_size) / conv.pool_stride + 1
-      cc.MaxPool(output_t, edge.output_t, num_filters, conv.pool_size, 0, conv.pool_stride, n_locs)
+      input_t = output_t
+      if conv.rnorm:
+        output_t = edge.unrnormalized_layer
+      else:
+        output_t = edge.output_t
+      n_locs = (n_locs - conv.pool_size) / conv.pool_stride + 1
+      cc.MaxPool(input_t, output_t, num_filters, conv.pool_size, 0, conv.pool_stride, n_locs)
+    if conv.rnorm:
+      input_t = output_t
       output_t = edge.output_t
+      denoms = edge.denoms
+      sizeX = conv.norm_size
+      add_scale = conv.add_scale
+      pow_scale = conv.pow_scale
+      cc.ResponseNorm(input_t, denoms, output_t, num_filters, sizeX, add_scale, pow_scale)
     output_t.transpose(target)
-
 
   def AddConvolveUp(self, inputs, edge, target):
     raise Exception('Not implemented.')
@@ -374,6 +407,9 @@ class Layer(object):
         self.state.div_by_row(self.NN)
         self.state.mult(self.hyperparams.normalize_to)
         self.NN.assign(self.hyperparams.normalize_to)
+    if self.activation == deepnet_pb2.Hyperparams.LINEAR and\
+       'precision' in self.params:
+      self.state.mult_by_col(self.params['precision'])
 
   def ComputeUp(self, train=False, step=0, maxsteps=0):
     """
@@ -388,6 +424,9 @@ class Layer(object):
     """
     logging.debug('ComputeUp in %s', self.name)
     self.dirty = False
+    if self.is_initialized:
+      return
+    perf = None
     if self.is_input:
       self.GetData()
     else:
@@ -395,7 +434,7 @@ class Layer(object):
         if edge in self.outgoing_edge:
           continue
         inputs = self.incoming_neighbour[i].state
-        if edge.conv:
+        if edge.conv or edge.local:
           if i == 0:
             self.ConvolveUp(inputs, edge, self.state)
           else:
@@ -415,16 +454,29 @@ class Layer(object):
       else:
         self.state.add_dot(b, self.replicated_neighbour.NN)
       self.ApplyActivation()
+      if self.hyperparams.sparsity:
+        self.state.sum(axis=1, target=self.dimsize)
+        perf = deepnet_pb2.Metrics()
+        perf.MergeFrom(self.proto.performance_stats)
+        perf.count = self.batchsize
+        self.dimsize.sum(axis=0, target=self.unitcell)
+        perf.sparsity = self.unitcell.euclid_norm() / self.dimsize.shape[0]
+        self.unitcell.greater_than(0)
+        if self.unitcell.euclid_norm() == 0:
+          perf.sparsity *= -1
 
     if self.hyperparams.dropout:
       if train and maxsteps - step >= self.hyperparams.stop_dropout_for_last:
         # Randomly set states to zero.
         self.mask.fill_with_rand()
         self.mask.greater_than(self.hyperparams.dropout_prob)
+        if self.hyperparams.blocksize > 1:
+          self.mask.blockify(self.hyperparams.blocksize)
         self.state.mult(self.mask)
       else:
         # Produce expected output.
         self.state.mult(1.0 - self.hyperparams.dropout_prob)
+    return perf
 
   def ComputeDown(self, step):
     """Backpropagate through this layer.
@@ -440,12 +492,14 @@ class Layer(object):
     if self.is_output:
       loss = self.GetLoss(get_deriv=True)
     else:
-      self.ComputeDeriv()
       loss = None
+      if self.hyperparams.sparsity:
+        self.AddSparsityGradient()
+      self.ComputeDeriv()
     # Now self.deriv contains the derivative w.r.t to the inputs.
     # Send it down each incoming edge and update parameters on the edge.
     for edge in self.incoming_edge:
-      if edge.conv:
+      if edge.conv or edge.local:
         edge.node1.AccumulateConvDeriv(edge, self.deriv)
       else:
         edge.node1.AccumulateDeriv(edge, self.deriv)
@@ -453,6 +507,37 @@ class Layer(object):
     # Update the parameters on this layer (i.e., the bias).
     self.UpdateParams(self.deriv, step)
     return loss
+
+  def AddSparsityGradient(self):
+    h = self.hyperparams
+    damping = h.sparsity_damping
+    target = h.sparsity_target
+    cost = h.sparsity_cost
+
+    # Update \hat{\rho}.
+    self.means.mult(damping)
+    self.means.add_sums(self.state, axis=1, mult=(1-damping)/self.batchsize)
+
+    # Compute gradient.
+    self.means_temp2.assign(1)
+    if self.activation == deepnet_pb2.Hyperparams.LOGISTIC:
+      self.means_temp2.subtract(self.means)
+      self.means_temp2.mult(self.means)
+    elif self.activation == deepnet_pb2.Hyperparams.TANH:
+      self.means_temp2.subtract(self.means, target=self.means_temp)
+      self.means_temp2.add(self.means)
+      self.means_temp2.mult(self.means_temp)
+    elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR:
+      self.means_temp2.assign(self.means)
+    elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR_SMOOTH:
+      self.means_temp2.assign(self.means)
+
+    self.means.subtract(target, target=self.means_temp)
+    self.means_temp.divide(self.means_temp2)
+    self.means_temp.mult(cost)
+
+    # Add to the derivative of the loss.
+    self.deriv.add_col_vec(self.means_temp)
 
   def UpdateParams(self, deriv, step):
     """ Update the parameters associated with this layer.
@@ -478,18 +563,22 @@ class Layer(object):
     elif h.epsilon_decay == deepnet_pb2.Hyperparams.INVERSE_T:
       epsilon = h.base_epsilon / (1 + float(step) / h.epsilon_decay_half_life)
     elif h.epsilon_decay == deepnet_pb2.Hyperparams.EXPONENTIAL:
-      epsilon = h.base_epsilon / np.pow(2, float(step) / h.epsilon_decay_half_life)
+      epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
     if step < h.start_learning_after:
       epsilon = 0.0
 
-    b_delta = self.params['grad_bias']
+    #b_delta = self.params['grad_bias']
+    b_delta = self.grad_bias
     b = self.params['bias']
 
     # Update bias.
     b_delta.mult(momentum)
-    b_delta.add_sums(deriv, axis=1, mult = (1.0 - momentum) / self.batchsize)
+    b_delta.add_sums(deriv, axis=1, mult = 1.0 / self.batchsize)
     if h.apply_l2_decay:
-      b_delta.add_mult(b, (1-momentum) * h.l2_decay)
+      b_delta.add_mult(b, h.l2_decay)
+    if h.apply_l1_decay and step > h.apply_l1decay_after:
+      b.sign(target=self.dimsize)
+      b_delta.add_mult(self.dimsize, h.l1_decay)
     b.add_mult(b_delta, -epsilon)
 
   def AccumulateConvDeriv(self, edge, deriv):
@@ -517,10 +606,11 @@ class Layer(object):
 
     f, numdims = w.shape
     assert f == num_filters, 'f is %d but num_filters is %d' % (f, num_filters)
-    assert numdims == size**2 * num_colors
+    if edge.conv:
+      assert numdims == size**2 * num_colors
 
     input_t = edge.input_t
-    numimages, numdims = input_t.shape
+    numImages, numdims = input_t.shape
 
     assert numdims % num_colors == 0
     x = int(np.sqrt(numdims / num_colors))
@@ -528,22 +618,54 @@ class Layer(object):
 
     n_locs = (x + 2 * padding - size) / stride + 1
 
-    if conv.max_pool:
-      deriv.transpose(edge.output_t2)
-      n_pool_locs = (n_locs + 2 * padding - conv.pool_size) / conv.pool_stride + 1
-      cc.MaxPoolUndo(edge.unpooled_layer, edge.unpooled_layer, edge.output_t2,
-                     edge.output_t, conv.pool_size, 0, conv.pool_stride, n_pool_locs)
-    else:
-      deriv.transpose(edge.output_t)
+    #pdb.set_trace()
+    # Incoming gradient.
+    deriv.transpose(edge.output_t2)
+    input_grads = edge.output_t2
 
+    # Output activation (after conv + pool? + norm?)
+    output_acts = edge.output_t
+
+    if conv.rnorm:
+
+      # ResponseNormUndo overwrites input_acts, so make a copy.
+      input_acts = edge.rnorm_temp1
+      input_acts.assign(edge.unrnormalized_layer)
+
+      output_grads = edge.rnorm_temp2
+      denoms = edge.denoms
+
+      sizeX = conv.norm_size
+      pow_scale = conv.pow_scale
+      add_scale = conv.add_scale
+      cc.ResponseNormUndo(input_grads, denoms, output_acts, input_acts,
+                          output_grads, num_filters, sizeX, add_scale,
+                          pow_scale)
+      input_grads = output_grads
+      output_acts = edge.unrnormalized_layer
+
+    if conv.max_pool:
+      input_acts = edge.unpooled_layer
+      output_grads = edge.unpooled_layer
+      # It's OK to overwrite input_acts because we don't need it later.
+
+      n_pool_locs = (n_locs - conv.pool_size) / conv.pool_stride + 1
+      sizeX = conv.pool_size
+      strideX = conv.pool_stride
+      cc.MaxPoolUndo(output_grads, input_acts, input_grads, output_acts, sizeX,
+                     0, strideX, n_pool_locs)
+      input_grads = output_grads
+      output_acts = input_acts
+    #pdb.set_trace()
     if self.is_input:
       return
-    if conv.max_pool:
-      output_t = edge.unpooled_layer
+
+    output_grads = edge.input_t2
+    if edge.conv:
+      cc.convDown(input_grads, w, output_grads, n_locs, padding, stride, size, x, num_colors)
     else:
-      output_t = edge.output_t
-    cc.convDown(output_t, w, input_t, n_locs, stride, size, x, num_colors)
-    input_t.transpose(self.deriv)
+      cc.localDown(input_grads, w, output_grads, n_locs, padding, stride, size, x, num_colors)
+    output_grads.transpose(self.deriv)
 
   def AccumulateDeriv(self, edge, deriv):
     """Accumulate the derivative w.r.t the outputs of this layer.
@@ -602,7 +724,7 @@ class Layer(object):
         data = self.data
         state = self.state
         deriv = self.deriv
-        temp3 = self.temp3
+        temp3 = self.dimsize
         unitcell = self.unitcell
  
         cm.cross_entropy(data, state, target=deriv, tiny=self.tiny)
@@ -665,7 +787,11 @@ class Layer(object):
         self.expansion_matrix.select_columns(self.data, target=self.expanded_batch)
         self.state.subtract(self.expanded_batch, target=self.deriv)
       else:
-        self.state.subtract(self.data, target=self.deriv)
+        if 'precision' in self.params:
+          self.data.mult_by_col(self.params['precision'], target=self.deriv)
+          self.deriv.subtract(self.state)
+        else:
+          self.state.subtract(self.data, target=self.deriv)
       error = self.deriv.euclid_norm()**2
       perf.error = error
       if self.activation != deepnet_pb2.Hyperparams.SOFTMAX and \

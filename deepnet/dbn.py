@@ -2,338 +2,269 @@
 from dbm import *
 
 class DBN(DBM):
-  @staticmethod
-  def FuseLayers(node1, node2):
-    print 'Fusing state of layer %s with data of %s' % (node1.name, node2.name)
-    if hasattr(node2, 'data') and isinstance(node2.data, cm.CUDAMatrix):
-      assert node1.state.shape == node2.data.shape,\
-          'Shape mismatch cannot fuse %s and %s' % (
-            node1.state.shape, node2.data.shape)
-      node2.data.free_device_memory()
-    node2.data = node1.state
-    assert node2.data == node1.state
+
+  def __init__(self, net, t_op=None, e_op=None):
+    rbm, upward_net, downward_net, junction_layers = DBN.SplitDBN(net)
+    self.rbm = DBM(rbm, t_op, e_op)
+    self.upward_net = NeuralNet(upward_net, t_op, e_op)
+    self.downward_net = NeuralNet(downward_net, t_op, e_op)
+    self.junction_layers = junction_layers
+    self.net = self.rbm.net
+    self.t_op = self.rbm.t_op
+    self.e_op = self.rbm.e_op
+    self.verbose = self.rbm.verbose
+
+  def Save(self):
+    self.rbm.Save()
+
+  def Show(self):
+    """Visualize the state of the layers and edges in the network."""
+    self.rbm.Show()
+    self.upward_net.Show()
+    self.downward_net.Show()
+
+  def PrintNetwork(self):
+    print 'RBM:'
+    self.rbm.PrintNetwork()
+    print 'Up:'
+    self.upward_net.PrintNetwork()
+    print 'Down:'
+    self.downward_net.PrintNetwork()
 
   @staticmethod
-  def ConvertToFeedForward(model_name):
-    """Concatenates lower level models and creates a feed forward net."""
-    print 'Converting %s' % model_name
-    model = util.ReadModel(model_name)
-    ff = deepnet_pb2.Model()
-    if model.lower_model:
-      # Include the lower model in ff.
-      for i, model_file in enumerate(model.lower_model):
-        m = DBN.ConvertToFeedForward(model_file)
-        ff.layer.extend(m.layer)
-        ff.edge.extend(m.edge)
-      # Include the top layer rbm in ff.
-      for l in model.layer:
-        if not l.is_input:
-          ff.layer.extend([l])
-      ff.edge.extend(model.edge)
-    else:
-      ff.CopyFrom(model)
-    for e in ff.edge:
-      e.directed = True
-    ff.model_type = deepnet_pb2.Model.FEED_FORWARD_NET
-    for l in ff.layer:
-      print 'Layer %s is_input %s' % (l.name, l.is_input)
-    print 'Conversion complete'
-    return ff
+  def SplitDBN(net):
+    #net = ReadModel(dbn_file)
+    rbm = deepnet_pb2.Model()
+    rbm.CopyFrom(net)
+    rbm.name = '%s_rbm' % net.name
+    rbm.model_type = deepnet_pb2.Model.DBM
+    
+    directed_edges = []
+    undirected_edges = []
+    layer1 = set()  # Layers that are touched by directed edges.
+    layer2 = set()  # Layers that are touched by undirected edges.
+    for e in net.edge:
+      if e.directed:
+        directed_edges.append(e)
+        layer1.add(e.node1)
+        layer1.add(e.node2)
+      else:
+        undirected_edges.append(e)
+        layer2.add(e.node1)
+        layer2.add(e.node2)
+
+    junction_layers = list(layer1.intersection(layer2))
+    
+    # CONTRUCT RBM.
+    del rbm.edge[:]
+    for e in undirected_edges:
+      rbm.edge.extend([e])
+
+    del rbm.layer[:]
+    for node in list(layer2):
+      l = next(l for l in net.layer if l.name == node)
+      layer = rbm.layer.add()
+      layer.CopyFrom(l)
+      if node in junction_layers:
+        layer.is_input = True
+        del layer.param[:]
+        for p in l.param:
+          if p.name == 'bias':
+            continue
+          elif p.name == 'bias_generative':
+            p_copy = layer.param.add()
+            p_copy.CopyFrom(p)
+            p_copy.name = 'bias'
+          else:
+            layer.param.extend([p])
+
+    # CONSTRUCT DOWNNARD NET.
+    down_net = deepnet_pb2.Model()
+    down_net.CopyFrom(net)
+    down_net.name = '%s_downward_net' % net.name
+    down_net.model_type = deepnet_pb2.Model.FEED_FORWARD_NET
+
+    del down_net.edge[:]
+    for e in directed_edges:
+      down_net.edge.extend([e])
+
+    del down_net.layer[:]
+    for node in list(layer1):
+      l = next(l for l in net.layer if l.name == node)
+      layer_down = down_net.layer.add()
+      layer_down.CopyFrom(l)
+      if l.is_input:
+        layer_down.is_input = False
+      if node in junction_layers:
+        layer_down.is_input = True
+      del layer_down.param[:]
+      for p in l.param:
+        if p.name == 'bias':
+          continue
+        elif p.name == 'bias_generative':
+          p_copy = layer_down.param.add()
+          p_copy.CopyFrom(p)
+          p_copy.name = 'bias'
+        else:
+          layer_down.param.extend([p])
+
+    # CONSTRUCT UPWARD NET.
+    up_net = deepnet_pb2.Model()
+    up_net.CopyFrom(net)
+    up_net.name = '%s_upward_net' % net.name
+    up_net.model_type = deepnet_pb2.Model.FEED_FORWARD_NET
+    del up_net.edge[:]
+    for e in directed_edges:
+      e_up = DBN.ReverseEdge(e)
+      up_net.edge.extend([e_up])
+    del up_net.layer[:]
+    for node in list(layer1):
+      l = next(l for l in net.layer if l.name == node)
+      layer_up = up_net.layer.add()
+      layer_up.CopyFrom(l)
+      del layer_up.param[:]
+      for p in l.param:
+        if p.name == 'bias_generative':
+          continue
+        else:
+          layer_up.param.extend([p])
+
+    return rbm, up_net, down_net, junction_layers
 
   @staticmethod
-  def ConvertToFeedBackward(model_name):
-    """Creates a feed forward net for passing data back."""
-    print 'Converting %s' % model_name
-    model = util.ReadModel(model_name)
-    ff = deepnet_pb2.Model()
-    for l in model.layer:
-      l.is_input = not l.is_input
-      ff.layer.extend([l])
-    for e in model.edge:
-      temp = e.node1
-      e.node1 = e.node2
-      e.node2 = temp
-      for p in e.param:
-        mat = util.ParameterAsNumpy(p)
-        p.mat = util.NumpyAsParameter(mat.T)
-        del p.dimensions[:]
-        p.dimensions.append(mat.shape[1])
-        p.dimensions.append(mat.shape[0])
-      e.directed = True
-      temp = e.up_factor
-      e.up_factor = e.down_factor
-      e.down_factor = temp
-      ff.edge.extend([e])
+  def ReverseEdge(e):
+    rev_e = deepnet_pb2.Edge()
+    rev_e.CopyFrom(e)
+    rev_e.node1 = e.node2
+    rev_e.node2 = e.node1
+    rev_e.up_factor = e.down_factor
+    rev_e.down_factor = e.up_factor
+    for p in rev_e.param:
+      if p.name == 'weight':
+        if p.initialization == deepnet_pb2.Parameter.PRETRAINED:
+          p.transpose_pretrained = not p.transpose_pretrained
+        elif p.mat:
+          mat = ParameterAsNumpy(p).T
+          p.mat = NumpyAsParameter(mat)
+          del p.dimensions
+          for dim in mat.shape:
+            p.dimensions.add(dim)
+    return rev_e
 
-    # Include the lower model in ff.
-    for i, model_file in enumerate(model.lower_model):
-      m = DBN.ConvertToFeedBackward(model_file)
-      for l in m.layer:
-        if not l.name in [x.name for x in ff.layer]:
-          ff.layer.extend([l])
-      ff.edge.extend(m.edge)
+  def LoadModelOnGPU(self, *args, **kwargs):
+    self.rbm.LoadModelOnGPU(*args, **kwargs)
+    self.upward_net.LoadModelOnGPU(*args, **kwargs)
+    self.downward_net.LoadModelOnGPU(*args, **kwargs)
 
-    ff.model_type = deepnet_pb2.Model.FEED_FORWARD_NET
-    for l in ff.layer:
-      print 'Layer %s is_input %s' % (l.name, l.is_input)
-    print 'Conversion complete'
-    return ff
+    # Tie up nets.
+    for layer_name in self.junction_layers:
+      rbm_layer = next(l for l in self.rbm.layer if l.name == layer_name)
+      up_layer = next(l for l in self.upward_net.layer if l.name == layer_name)
+      down_layer = next(l for l in self.downward_net.layer if l.name == layer_name)
+      rbm_layer.data = up_layer.state
+      down_layer.data = rbm_layer.state
 
-  def DumpModelState(self, step):
-    state_dict = dict([(node.name, node.state.asarray().T) for node in self.node_list])
-    for net in self.feed_forward_net:
-      for node in net.node_list:
-        state_dict['forward_%s' % node.name] = node.state.asarray().T
-    for net in self.feed_backward_net:
-      for node in net.node_list:
-        state_dict['backward_%s' % node.name] = node.state.asarray().T
-    filename = '/ais/gobi3/u/nitish/flickr/states/%s_%.5d' % (self.net.name, step)
-    print 'Dumping state at step %d to %s' % (step, filename)
-    np.savez(filename, **state_dict)
-
-  def SetUpData(self, *args):
-    """Here we hook up the inputs of the DBN to the model below them."""
-    self.feed_forward_net = []
-    for model_file in self.net.lower_model:
-      print 'Hooking up model %s' % (model_file) 
-      model_pb = DBN.ConvertToFeedForward(model_file)
-      assert model_pb.model_type == deepnet_pb2.Model.FEED_FORWARD_NET
-      model = NeuralNet(model_pb, self.t_op, self.e_op)
-      args = model.SetUpTrainer(*args)
-      add_to_ff = False
-      for node in self.input_datalayer:
-        assert node.proto.HasField('data_field')
-        for layer in model.layer:
-          if layer.name == node.proto.data_field.layer_name:
-            DBN.FuseLayers(layer, node)
-            add_to_ff = True
-      if add_to_ff:
-        self.feed_forward_net.append(model)
-    args = super(DBN, self).SetUpData(*args)
-    return args
-
-  def SetUpBackwardData(self, tap_down_from=[]):
-    """Here we hook up the inputs of the DBN to the model below them.
-    Args:
-      tap_down_from: Hook these layers to the feed_backward_nets. The model
-      already links the input layers. This argument is used for any other layers
-      that one way want to tap down through a net.
-    """
-    self.feed_backward_net = []
-    tap_down_from.extend(self.input_datalayer)
-    tap_down_from = list(set(tap_down_from))
-    for model_file in self.net.lower_model:
-      print 'Hooking up model %s' % (model_file) 
-      model_pb = DBN.ConvertToFeedBackward(model_file)
-      assert model_pb.model_type == deepnet_pb2.Model.FEED_FORWARD_NET
-      model = NeuralNet(model_pb, self.t_op, self.e_op)
-      model.SetUpTrainer()
-      add_to_ff = False
-      for node in tap_down_from:
-        assert node.proto.HasField('data_field')
-        for layer in model.layer:
-          if layer.name == node.proto.data_field.layer_name:
-            DBN.FuseLayers(node, layer)
-            add_to_ff = True
-      if add_to_ff:
-        self.feed_backward_net.append(model)
-
-  def SetUpTrainer(self, *args):
-    """Load the model, setup the data, set the stopping conditions."""
-    self.LoadModelOnGPU()
-    self.PrintNetwork()
-    args = self.SetUpData(*args)
-    if self.feed_forward_net:
-      self.train_stop_steps = self.feed_forward_net[0].train_stop_steps
-      self.validation_stop_steps = self.feed_forward_net[0].validation_stop_steps
-      self.test_stop_steps = self.feed_forward_net[0].test_stop_steps
-    self.eval_now_steps = self.t_op.eval_after
-    self.save_now_steps = self.t_op.checkpoint_after
-    self.show_now_steps = self.t_op.show_after
-    return args
-
-  def TrainOneBatch(self, step):
-    # Get the data through the lower model(s).
-    for net in self.feed_forward_net:
-      net.ForwardPropagate(train=True)
-    # Do what we usually do with DBMs/RBMs.
-    return super(DBN, self).TrainOneBatch(step)
-
-  def EvaluateOneBatch(self):
-    # Get the data through the lower model(s).
-    for net in self.feed_forward_net:
-      net.ForwardPropagate(train=False)
-    # Do what we usually do with DBMs/RBMs.
-    return super(DBN, self).EvaluateOneBatch()
+  def SetUpData(self):
+    self.upward_net.SetUpData()
+    self.train_data_handler = self.upward_net.train_data_handler
+    self.validation_data_handler = self.upward_net.validation_data_handler
+    self.test_data_handler = self.upward_net.test_data_handler
 
   def GetTrainBatch(self):
-    """Ask the feed forward nets to get the training data."""
-    for net in self.feed_forward_net:
-      net.GetTrainBatch()
-    for layer in self.input_datalayer:
-      if layer.train_data_handler is not None:
-        layer.GetTrainData()
-    for layer in self.output_datalayer:
-      if layer.train_data_handler is not None:
-        layer.GetTrainData()
+    self.upward_net.GetTrainBatch()
 
   def GetValidationBatch(self):
-    """Ask the feed forward nets to get the validation data."""
-    for net in self.feed_forward_net:
-      net.GetValidationBatch()
-    for layer in self.input_datalayer:
-      if layer.validation_data_handler is not None:
-        layer.GetValidationData()
-    for layer in self.output_datalayer:
-      if layer.validation_data_handler is not None:
-        layer.GetValidationData()
+    self.upward_net.GetValidationBatch()
 
   def GetTestBatch(self):
-    """Ask the feed forward nets to get the test data."""
-    for net in self.feed_forward_net:
-      net.GetTestBatch()
-    for layer in self.input_datalayer:
-      if layer.test_data_handler is not None:
-        layer.GetTestData()
-    for layer in self.output_datalayer:
-      if layer.test_data_handler is not None:
-        layer.GetTestData()
+    self.upward_net.GetTestBatch()
 
+  def TrainOneBatch(self, step):
+    self.upward_net.ForwardPropagate(train=True, step=step)
+    return self.rbm.TrainOneBatch(step)
+ 
+  def PositivePhase(self, train=False, evaluate=False, step=0):
+    self.upward_net.ForwardPropagate(train=train, step=step)
+    return self.rbm.PositivePhase(train=train, evaluate=evaluate, step=step)
+    #self.downward_net.ForwardPropagate(train=train, step=step)
 
-  def DoInference(self, layername, numbatches, inputlayername=[], method='mf',
-                  steps=0, validation=True):
-    step = 0
-    indices = range(numbatches * self.e_op.batchsize)
-    self.rep_pos = 0
-    inputlayer = []
-    self.inputs = []
-    layer_to_tap = self.GetLayerByName(layername, down=True)
-    self.rep = np.zeros((numbatches * self.e_op.batchsize,
-                         layer_to_tap.state.shape[0]))
-    for i, lname in enumerate(inputlayername):
-      l = self.GetLayerByName(lname)
-      inputlayer.append(l)
-      self.inputs.append(np.zeros((numbatches * self.e_op.batchsize,
-                                   l.state.shape[0])))
-    if validation:
+  def NegativePhase(self, *args, **kwargs):
+    return self.rbm.NegativePhase(*args, **kwargs)
+
+  def Inference(self, steps, layernames, unclamped_layers, output_dir, memory='1G', dataset='test', method='gibbs'):
+    layers_to_infer = [self.GetLayerByName(l, down=True) for l in layernames]
+    layers_to_unclamp = [self.GetLayerByName(l) for l in unclamped_layers]
+
+    numdim_list = [layer.state.shape[0] for layer in layers_to_infer]
+    upward_net_unclamped_inputs = []
+    for l in layers_to_unclamp:
+      l.is_input = False
+      l.is_initialized = True
+      if l in self.rbm.layer:
+        self.rbm.pos_phase_order.append(l)
+      else:
+        upward_net_unclamped_inputs.append(l)
+
+    if dataset == 'train':
+      datagetter = self.GetTrainBatch
+      if self.train_data_handler is None:
+        return
+      numbatches = self.train_data_handler.num_batches
+      size = numbatches * self.train_data_handler.batchsize
+    elif dataset == 'validation':
       datagetter = self.GetValidationBatch
-      #datagetter = self.GetTrainBatch
-    else:
+      if self.validation_data_handler is None:
+        return
+      numbatches = self.validation_data_handler.num_batches
+      size = numbatches * self.validation_data_handler.batchsize
+    elif dataset == 'test':
       datagetter = self.GetTestBatch
-    for batch in range(numbatches):
-      datagetter()
-      self.InferOneBatch(layer_to_tap, inputlayer, steps, method)
-    return self.rep, self.inputs
+      if self.test_data_handler is None:
+        return
+      numbatches = self.test_data_handler.num_batches
+      size = numbatches * self.test_data_handler.batchsize
+    dw = DataWriter(layernames, output_dir, memory, numdim_list, size)
 
-  def GetAllRepresentations(self, numbatches, validation=True):
-    if validation:
-      datagetter = self.GetValidationBatch
-    else:
-      datagetter = self.GetTestBatch
-    rep_list = []
-    names = []
-    for node in self.node_list:
-      if not node.is_input:
-        rep_list.append(np.zeros((numbatches * node.state.shape[1],
-                                  node.state.shape[0]), dtype='float32'))
-        names.append(node.name)
-    for net in self.feed_forward_net:
-      for node in net.node_list:
-        rep_list.append(np.zeros((numbatches * node.state.shape[1],
-                                  node.state.shape[0]), dtype='float32'))
-        names.append(node.name)
+    gibbs = method == 'gibbs'
+    mf = method == 'mf'
+    if gibbs:
+      for layer in self.rbm.layer:
+        layer.pos_phase = False
+
+    for node in self.rbm.layer:
+      node.TiePhases()
 
     for batch in range(numbatches):
+      sys.stdout.write('\r%d' % (batch+1))
+      sys.stdout.flush()
       datagetter()
-      for net in self.feed_forward_net:
-        net.ForwardPropagate(train=False)
-      self.PositivePhase(train=False, evaluate=False)
-      i = 0
-      for node in self.node_list:
-        if not node.is_input:
-          rep_list[i][batch*node.batchsize:(batch+1)*node.batchsize,:] =\
-              node.state.asarray().T
-          i += 1
-      for net in self.feed_forward_net:
-        for node in net.node_list:
-          if node.is_input:
-            rep_list[i][batch*node.batchsize:(batch+1)*node.batchsize,:] =\
-                node.data.asarray().T
-          else:
-            rep_list[i][batch*node.batchsize:(batch+1)*node.batchsize,:] =\
-                node.state.asarray().T
-          i += 1
-    return dict(zip(names, rep_list))
-
-  def ReconstructOneBatch(self, layer, inputlayer=[]):
-    for net in self.feed_forward_net:
-      net.ForwardPropagate(train=False)
-    self.PositivePhase(train=False, evaluate=True)
-    for net in self.feed_backward_net:
-      net.ForwardPropagate(train=False)
-    self.recon[self.recon_pos:self.recon_pos + self.e_op.batchsize,:] =\
-        layer.state.asarray().T
-    for i, l in enumerate(inputlayer):
-      self.inputs[i][self.recon_pos:self.recon_pos + self.e_op.batchsize,:] =\
-          l.data.asarray().T
-    self.recon_pos += self.e_op.batchsize
-
-  def GetRepresentationOneBatch(self, layer, inputlayer=[]):
-    for net in self.feed_forward_net:
-      net.ForwardPropagate(train=False)
-    self.PositivePhase(train=False, evaluate=False)
-    self.rep[self.rep_pos:self.rep_pos + self.e_op.batchsize,:] =\
-        layer.state.asarray().T
-    for i, l in enumerate(inputlayer):
-      self.inputs[i][self.rep_pos:self.rep_pos + self.e_op.batchsize,:] =\
-          l.data.asarray().T
-    self.rep_pos += self.e_op.batchsize
-
-  def InferOneBatch(self, layer, inputlayers, steps, method, dumpstate=False):
-    for net in self.feed_forward_net:
-      net.ForwardPropagate(train=False)
-    self.Infer(steps, method)
-    for net in self.feed_backward_net:
-      net.ForwardPropagate(train=False)
-    if dumpstate:
-      self.DumpModelState(steps)
-    self.rep[self.rep_pos:self.rep_pos + self.e_op.batchsize, :] =\
-        layer.state.asarray().T
-    for i, l in enumerate(inputlayers):
-      self.inputs[i][self.rep_pos:self.rep_pos + self.e_op.batchsize,:] =\
-        l.state.asarray().T
-    self.rep_pos += self.e_op.batchsize
+      for l in upward_net_unclamped_inputs:
+        l.data.assign(0)
+      self.upward_net.ForwardPropagate()
+      for node in self.rbm.node_list:
+        if node.is_input or node.is_initialized:
+          node.GetData()
+          if gibbs:
+            node.sample.assign(node.state)
+        else:
+          node.ResetState(rand=False)
+      for i in range(steps):
+        for node in self.rbm.pos_phase_order:
+          node.ComputeUp()
+          if gibbs:
+            node.Sample()
+      self.downward_net.ForwardPropagate()
+      output = [l.state.asarray().T for l in layers_to_infer]
+      dw.Submit(output)
+    sys.stdout.write('\n')
+    dw.Commit()
+    return size
 
   def GetLayerByName(self, layername, down=False):
-    if down:
-      return self.GetLayerByNameFeedBackward(layername)
-    else:
-      return self.GetLayerByNameFeedForward(layername)
-
-  def GetLayerByNameFeedForward(self, layername):
-    layer = None
-    try:
-      layer = next(layer for layer in self.layer if layer.name == layername)
-    except StopIteration:
-      for ff in self.feed_forward_net:
-        try:
-          layer = next(layer for layer in ff.layer if layer.name == layername)
-        except StopIteration:
-          pass
+    layer = self.rbm.GetLayerByName(layername)
     if layer is None:
-      print 'No such layer %s' % layername
-    return layer
-
-  def GetLayerByNameFeedBackward(self, layername):
-    layer = None
-    try:
-      layer = next(layer for layer in self.layer if layer.name == layername)
-    except StopIteration:
-      for ff in self.feed_backward_net:
-        try:
-          layer = next(layer for layer in ff.layer if layer.name == layername)
-        except StopIteration:
-          pass
-    if layer is None:
-      print 'No such layer %s' % layername
+      if down:
+        layer = self.downward_net.GetLayerByName(layername)
+      else:
+        layer = self.upward_net.GetLayerByName(layername)
     return layer
