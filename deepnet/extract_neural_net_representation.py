@@ -4,7 +4,7 @@ from trainer import *
 import sys
 
 def ExtractRepresentations(model_file, train_op_file, layernames,
-                           base_output_dir, memory = '100M', skip_outputs=False,
+                           base_output_dir, memory = '100M', skip_outputs=True,
                            datasets=['test']):
   if isinstance(model_file, str):
     model = util.ReadModel(model_file)
@@ -23,8 +23,8 @@ def ExtractRepresentations(model_file, train_op_file, layernames,
 
   data_pb = deepnet_pb2.Dataset()
   data_pb.name = model.name
-  data_pb.gpu_memory = '5G'
-  data_pb.main_memory =  '30G'
+  data_pb.gpu_memory = '1G'
+  data_pb.main_memory =  '2G'
   output_proto_file = os.path.join(base_output_dir, 'data.pbtxt')
   for dataset in datasets:
     output_dir = os.path.join(base_output_dir, dataset)
@@ -59,9 +59,9 @@ def main():
   model = util.ReadModel(model_file)
   train_op_file = sys.argv[2]
   output_dir = sys.argv[3]
-  layernames = [' '.join(l.split('_')) for l in sys.argv[4:]]
+  layernames = sys.argv[4:]
   ExtractRepresentations(model_file, train_op_file, layernames, output_dir,
-                         memory='1G', test_only=True)
+                         memory='1G', datasets=['train', 'validation', 'test'])
   FreeGPU()
 
 
