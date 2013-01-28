@@ -1,0 +1,69 @@
+# Sample data pbtxt file.
+name: "mnist"
+gpu_memory: "2G"  # Upper bound on gpu memory use.
+main_memory: "4G"  # Upper bound on main memory use.
+
+# Edit the paths appropriately.
+data {
+  name: "train_full_data"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/train_full.npy"
+  size: 60000
+  dimensions: 784
+}
+
+data {
+  name: "train_full_labels"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/train_full_labels.npy"
+  size: 60000
+  dimensions: 1
+  num_labels: 10
+  sparse: true
+}
+
+data {
+  name: "train_data"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/train.npy"
+  size: 50000
+  dimensions: 784
+}
+
+data {
+  name: "train_labels"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/train_labels.npy"
+  size: 50000
+  dimensions: 1
+  num_labels: 10
+  sparse: true
+}
+
+data {
+  name: "validation_data"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/validation.npy"
+  size: 10000
+  dimensions: 784
+}
+
+data {
+  name: "validation_labels"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/validation_labels.npy"
+  size: 10000
+  dimensions: 1
+  num_labels: 10
+  sparse: true
+}
+
+data {
+  name: "test_data"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/test.npy"
+  size: 10000
+  dimensions: 784
+}
+
+data {
+  name: "test_labels"
+  file_pattern: "/ais/gobi3/u/nitish/mnist/test_labels.npy"
+  size: 10000
+  dimensions: 1
+  num_labels: 10
+  sparse: true
+}
