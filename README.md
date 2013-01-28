@@ -9,7 +9,9 @@ GPU-based python implementation of
 (3) Deep Belief Nets
 (4) Autoencoders
 (5) Deep Boltzmann Machines
+(6) Convolutional Neural Nets
 
-Built on top of the cudamat library by Vlad Mnih.
+Built on top of the cudamat library by Vlad Mnih and cuda-convnet library by
+Alex Krizhevsky.
 
 http://www.cs.toronto.edu/~nitish/deepnet
