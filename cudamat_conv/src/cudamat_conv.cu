@@ -54,6 +54,11 @@ extern "C" void MaxPool(cudamat* images, cudamat* targets, int numFilters, int s
   MaxPooler mpooler;
   convLocalPoolCu<MaxPooler>(images, targets, numFilters, subsX, startX, strideX, outputsX, mpooler);
 }
+extern "C" void ProbMaxPool(cudamat* images, cudamat* rnd, cudamat* targets, int numFilters, int subsX,	int startX,	int strideX, int outputsX){
+  ProbMaxPooler mpooler;
+  convLocalProbPoolCu<ProbMaxPooler>(images, rnd, targets, numFilters, subsX, startX, strideX, outputsX, mpooler);
+}
+
 
 extern "C" void MaxPoolUndo(cudamat* images, cudamat* maxGrads, cudamat* maxActs, cudamat* targets, int subsX, int startX, int strideX, int outputsX){
   convLocalMaxUndoCu(images, maxGrads, maxActs, targets, subsX, startX, strideX, outputsX, 0, 1);

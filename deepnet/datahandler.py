@@ -1,4 +1,5 @@
 from deepnet import util
+from deepnet import deepnet_pb2
 import cPickle as pickle
 import cudamat as cm
 import glob
@@ -603,7 +604,7 @@ class DataHandler(object):
                                 verbose=self.verbose, shift=shift, add_noise=add_noise,
                                 center_only=not is_train, shift_amt_x=shift_amt_x, shift_amt_y=shift_amt_y)
     for i, stats_file in enumerate(stats_files):
-      if hyperparameter_list[i].normalize:
+      if hyperparameter_list[i].normalize and hyperparameter_list[i].activation != deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
         self.gpu_cache.SetDataStats(i, stats_file)
     self.batchsize = batchsize
     if seq:
@@ -618,14 +619,6 @@ class DataHandler(object):
     """
     batch = self.gpu_cache.Get(self.batchsize, get_last_piece=self.get_last_piece)
     return batch
-    """
-    if batch[0].shape[1] == self.batchsize or self.get_last_piece:
-      if batch[0].shape[1] != self.batchsize:
-        pdb.set_trace()
-      return batch
-    else:
-      return self.Get()
-    """
 
   def GetCPUBatches(self):
     """Returns batches from main memory."""
@@ -663,6 +656,7 @@ class DataWriter(object):
       total_memory = min(total_memory, total_memory_needed)
     self.buffer_index = [0] * self.data_len
     self.dump_count = [0] * self.data_len
+    self.data_written = [0] * self.data_len
     self.max_dumps = []
     self.buffers = []
     for numdim in numdim_list:
@@ -705,6 +699,7 @@ class DataWriter(object):
     self.dump_count[i] += 1
     np.save(output_filename, buf[:buf_index])
     self.buffer_index[i] = 0
+    self.data_written[i] += buf_index
 
   def Submit(self, data):
     assert len(data) == self.data_len
@@ -717,3 +712,4 @@ class DataWriter(object):
   def Commit(self):
     for i in range(self.data_len):
       self.DumpBuffer(i)
+    return self.data_written

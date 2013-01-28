@@ -241,7 +241,7 @@ class NeuralNet(object):
         stat.prec50_list.extend([m])
     for stat in stats:
       sys.stdout.write(GetPerformanceStats(stat, prefix=prefix))
-      stats_list.extend(stats)
+    stats_list.extend(stats)
 
   def ScoreOneLabel(self, preds, targets):
     """Computes Average precision and precision at 50."""
@@ -302,8 +302,7 @@ class NeuralNet(object):
       reprs = [l.state.asarray().T for l in layers]
       datawriter.Submit(reprs)
     sys.stdout.write('\n')
-    datawriter.Commit()
-    return size
+    return datawriter.Commit()
 
   def TrainStopCondition(self, step):
     return step >= self.train_stop_steps
@@ -338,6 +337,7 @@ class NeuralNet(object):
     util.WriteCheckpointFile(self)
 
   def ResetBatchsize(self, batchsize):
+    self.batchsize = batchsize
     for layer in self.layer:
       layer.AllocateBatchsizeDependentMemory(batchsize)
     for edge in self.edge:
@@ -444,6 +444,16 @@ class NeuralNet(object):
     step = self.t_op.current_step
     stop = self.TrainStopCondition(step)
     stats = []
+
+    collect_predictions = False
+    try:
+      p = self.output_datalayer[0].proto.performance_stats
+      if p.compute_MAP or p.compute_prec50:
+        collect_predictions = True
+    except Exception as e:
+      pass
+
+
     while not stop:
       sys.stdout.write('\rTrain Step: %d' % step)
       sys.stdout.flush()
@@ -455,6 +465,8 @@ class NeuralNet(object):
       else:
         stats = losses
       step += 1
+      if self.ShowNow(step):
+        self.Show()
       if self.EvalNow(step):
         # Print out training stats.
         sys.stdout.write('\rStep %d ' % step)
@@ -463,9 +475,9 @@ class NeuralNet(object):
         self.net.train_stats.extend(stats)
         stats = []
         # Evaluate on validation set.
-        self.Evaluate(validation=True)
+        self.Evaluate(validation=True, collect_predictions=collect_predictions)
         # Evaluate on test set.
-        self.Evaluate(validation=False)
+        self.Evaluate(validation=False, collect_predictions=collect_predictions)
         """
         p = self.layer[0].params['precision'].asarray()
         sys.stdout.write(' prec: %.4f %.4f' % (p.max(), p.min()))
@@ -473,8 +485,6 @@ class NeuralNet(object):
         sys.stdout.write(' bias: %.4f %.4f' % (b.max(), b.min()))
         """
         sys.stdout.write('\n')
-        if self.ShowNow(step):
-          self.Show()
       if self.SaveNow(step):
         self.t_op.current_step = step
         self.Save()

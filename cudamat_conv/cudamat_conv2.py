@@ -126,6 +126,25 @@ def MaxPool(images, targets, numChannels, subsX, startX, strideX, outputsX):
     _ConvNet.MaxPool(images.p_mat, targets.p_mat,
                      numChannels, subsX, startX, strideX, outputsX)
 
+def ProbMaxPool(images, rnd, targets, numChannels, subsX, startX, strideX, outputsX):
+    """
+    images - (n_images, img_w**2 * n_chans)
+    rnd - (n_images, img_w**2 * n_chans)
+    numChannels - number of filter/color channels
+    subsX - width of pooling area
+    startX - pixel where pooling starts
+    strideX - stride
+    outputsX - number of pooling sites
+    """
+    numImages = images.shape[0]
+
+    assert targets.shape == (numImages, numChannels * outputsX * outputsX)
+    assert rnd.shape == images.shape
+
+    _ConvNet.ProbMaxPool(images.p_mat, rnd.p_mat, targets.p_mat,
+                     numChannels, subsX, startX, strideX, outputsX)
+
+
 def MaxPoolUndo(images, targets, grad, maxes,
                 subsX, startX, strideX, outputsX):
     """

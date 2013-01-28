@@ -131,7 +131,7 @@ class DBM(NeuralNet):
         if (i == 0 and node.is_input
             and self.t_op.optimizer == deepnet_pb2.Operation.CD):
           losses.append(node.GetLoss())
-        if node.is_input:
+        if node.is_input and not node.sample_input:
           # Not sampling inputs usually makes learning faster.
           node.sample.assign(node.state)
         else:
@@ -317,8 +317,7 @@ class DBM(NeuralNet):
       reprs = [l.state.asarray().T for l in layers]
       datawriter.Submit(reprs)
     sys.stdout.write('\n')
-    datawriter.Commit()
-    return size
+    return datawriter.Commit()
 
   def GetRepresentation(self, layername, numbatches, inputlayername=[],
                         validation=True):

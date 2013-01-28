@@ -39,12 +39,9 @@ class Layer(object):
     self.tied_to = None
     self.data = None
     self.deriv = None
-    self.suff_stats = None
-    self.learn_precision = False
     self.LoadParams(proto)
     self.marker = 0
     self.fig = visualize.GetFigId()
-    self.pos_phase = True
     self.tiny = 1e-10
     self.replicated_neighbour = None
     if batchsize > 0:
@@ -381,7 +378,17 @@ class Layer(object):
       else:
         output_t = edge.output_t
       n_locs = (n_locs - conv.pool_size) / conv.pool_stride + 1
-      cc.MaxPool(input_t, output_t, num_filters, conv.pool_size, 0, conv.pool_stride, n_locs)
+      if conv.prob:
+        # Get Gumbel variates.
+        rnd = edge.rnd
+        rnd.fill_with_rand()
+        cm.log(rnd)
+        rnd.mult(-1)
+        cm.log(rnd)
+        rnd.mult(-1)
+        cc.ProbMaxPool(input_t, rnd, output_t, num_filters, conv.pool_size, 0, conv.pool_stride, n_locs)
+      else:
+        cc.MaxPool(input_t, output_t, num_filters, conv.pool_size, 0, conv.pool_stride, n_locs)
     if conv.rnorm:
       input_t = output_t
       output_t = edge.output_t
@@ -539,15 +546,7 @@ class Layer(object):
     # Add to the derivative of the loss.
     self.deriv.add_col_vec(self.means_temp)
 
-  def UpdateParams(self, deriv, step):
-    """ Update the parameters associated with this layer.
-
-    Update the bias.
-    Args:
-      deriv: Gradient w.r.t the inputs to this layer.
-      step: Training step.
-    """
-    logging.debug('UpdateParams in %s', self.name)
+  def GetMomentumAndEpsilon(self, step):
     h = self.hyperparams
 
     # Linearly interpolate between initial and final momentum.
@@ -566,8 +565,22 @@ class Layer(object):
       epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
     if step < h.start_learning_after:
       epsilon = 0.0
+    return momentum, epsilon
 
-    #b_delta = self.params['grad_bias']
+
+  def UpdateParams(self, deriv, step):
+    """ Update the parameters associated with this layer.
+
+    Update the bias.
+    Args:
+      deriv: Gradient w.r.t the inputs to this layer.
+      step: Training step.
+    """
+    logging.debug('UpdateParams in %s', self.name)
+
+    h = self.hyperparams
+
+    momentum, epsilon = self.GetMomentumAndEpsilon(step)
     b_delta = self.grad_bias
     b = self.params['bias']
 

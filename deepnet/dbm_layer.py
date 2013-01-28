@@ -4,6 +4,14 @@ import pdb
 
 class DBMLayer(Layer):
 
+  def __init__(self, *args, **kwargs):
+    self.phases_tied = False
+    self.suff_stats = None
+    self.learn_precision = False
+    self.pos_phase = True
+    self.sample_input = False
+    super(DBMLayer, self).__init__(*args, **kwargs)
+
   def LoadParams(self, proto):
     super(DBMLayer, self).LoadParams(proto)
     self.suff_stats = cm.empty((proto.numlabels * proto.dimensions, 1))
@@ -12,7 +20,8 @@ class DBMLayer(Layer):
       self.suff_stats2 = cm.empty((proto.numlabels * proto.dimensions, 1))
     self.fig_neg = visualize.GetFigId()
     self.fig_precision = visualize.GetFigId()
-
+    self.sample_input = self.hyperparams.sample_input
+  
   def Show(self):
     """Displays useful statistics about the layer."""
     if not self.proto.hyperparams.enable_display:
@@ -60,6 +69,7 @@ class DBMLayer(Layer):
     This is done to save memory when doing CD. Since the Markov chain is not run
     persistently, the neg state need not be preserved after each cycle.
     """
+    self.phases_tied = True
     if self.neg_state != self.pos_state:
       self.neg_state.free_device_memory()
       self.neg_state = self.pos_state
@@ -80,20 +90,24 @@ class DBMLayer(Layer):
     self.Sample()
     self.SetPhase(pos=True)
 
-  def AllocateMemory(self, batchsize):
-    super(DBMLayer, self).AllocateMemory(batchsize=batchsize)
+  def AllocateBatchsizeDependentMemory(self, batchsize):
+    super(DBMLayer, self).AllocateBatchsizeDependentMemory(batchsize)
 
     # self.state and self.deriv were allocated in super but they are not needed
     # for DBMs, so we re-interpret them as:
     self.pos_state = self.state
     self.pos_sample = self.deriv
+    self.sample = self.pos_sample
 
     # Allocate variables for negative state.
-    self.neg_state = cm.CUDAMatrix(np.zeros((self.numlabels * self.dimensions,
-                                            batchsize)))
-    self.neg_sample = cm.CUDAMatrix(np.zeros((self.numlabels * self.dimensions,
-                                            batchsize)))
-    self.sample = self.pos_sample
+    if self.phases_tied:
+      self.neg_state = self.pos_state
+      self.neg_sample = self.pos_sample
+    else:
+      self.neg_state = cm.CUDAMatrix(np.zeros((self.numlabels * self.dimensions,
+                                              batchsize)))
+      self.neg_sample = cm.CUDAMatrix(np.zeros((self.numlabels * self.dimensions,
+                                              batchsize)))
 
   def ComputeUp(self, train=False, recon=False, step=0, maxsteps=0):
     """

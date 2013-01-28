@@ -165,18 +165,9 @@ class Edge(object):
     else:
       cc.localOutp(input_t, output_t, grad, n_locs, padding, size, stride, num_colors)
 
-  def UpdateParams(self, deriv, step):
-    """ Update the parameters associated with this edge.
 
-    Update the weights and associated parameters.
-    Args:
-      deriv: Gradient w.r.t the inputs at the outgoing end.
-      step: Training step.
-    """
-
-    logging.debug('UpdateParams in edge %s', self.name)
+  def GetMomentumAndEpsilon(self, step):
     h = self.hyperparams
-    numcases = self.node1.batchsize
     if h.momentum_change_steps > step:
       f = float(step) / h.momentum_change_steps
       momentum = (1.0 - f) * h.initial_momentum + f * h.final_momentum
@@ -189,6 +180,22 @@ class Edge(object):
       epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
     if step < h.start_learning_after:
       epsilon = 0.0
+    return momentum, epsilon
+
+  def UpdateParams(self, deriv, step):
+    """ Update the parameters associated with this edge.
+
+    Update the weights and associated parameters.
+    Args:
+      deriv: Gradient w.r.t the inputs at the outgoing end.
+      step: Training step.
+    """
+
+    logging.debug('UpdateParams in edge %s', self.name)
+    h = self.hyperparams
+    numcases = self.node1.batchsize
+
+    momentum, epsilon = self.GetMomentumAndEpsilon(step)
 
     w_delta = self.grad_weight
     w = self.params['weight']
@@ -235,10 +242,11 @@ class Edge(object):
     assert x**2 == numdims / num_colors
     n_locs = (x + 2 * padding - size) / stride + 1
 
+    input_shape = node1.state.shape[::-1]
     output_shape = node2.state.shape[::-1]
 
-    self.input_t = cm.empty(node1.state.shape[::-1])
-    self.input_t2 = cm.empty(node1.state.shape[::-1])
+    self.input_t = cm.empty(input_shape)
+    self.input_t2 = cm.empty(input_shape)
     self.output_t = cm.empty(output_shape)
     self.output_t2 = cm.empty(output_shape)
     if param.conv_params.max_pool:
@@ -248,6 +256,8 @@ class Edge(object):
       pool_stride = param.conv_params.pool_stride
       n_pool_locs = (n_locs - pool_size) / pool_stride + 1
       assert output_shape[1] == n_pool_locs**2 * num_filters
+      if param.conv_params.prob:
+        self.rnd = cm.empty(self.unpooled_layer.shape)
     else:
       assert output_shape[1] == n_locs**2 * num_filters
     if param.conv_params.rnorm:

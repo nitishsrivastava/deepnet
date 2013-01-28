@@ -91,7 +91,7 @@ def save(fname, var_list, source_dict):
         pickle.dump(source_dict[var], fo, protocol=2)
     fo.close()
 
-def load(fname, target_dict, verbose = True):
+def load(fname, target_dict, verbose = False):
     fo = gzip.GzipFile(fname, 'rb')
     var_list = pickle.load(fo)
     if verbose:
