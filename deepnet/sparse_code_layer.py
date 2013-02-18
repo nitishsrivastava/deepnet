@@ -5,6 +5,9 @@ class SparseCodeLayer(Layer):
   def AllocateBatchsizeDependentMemory(self, batchsize):
     super(SparseCodeLayer, self).AllocateBatchsizeDependentMemory(batchsize)
     self.approximator = cm.empty(self.state.shape)
+    self.temp3 = cm.empty(self.state.shape)
+    self.grad = cm.empty(self.state.shape)
+    self.grad_scale = cm.CUDAMatrix(np.zeros((self.state.shape[0], 1)))
     self.m_by_m = cm.empty((self.state.shape[0], self.state.shape[0]))
 
   def ApplyActivation(self, state):

@@ -31,7 +31,6 @@ class Layer(object):
     self.activation = proto.hyperparams.activation
     self.is_input = proto.is_input
     self.is_output = proto.is_output
-    self.is_initialized = False
     self.loss_function = proto.loss_function
     self.train_data_handler = None
     self.validation_data_handler = None
@@ -51,34 +50,8 @@ class Layer(object):
     for param in self.proto.param:
       param.mat = util.NumpyAsParameter(self.params[param.name].asarray())
 
-  def SetDataHandles(self, train=None, valid=None, test=None, tied_to=None):
-    if tied_to is None:
-      self.train_data_handler = train
-      self.validation_data_handler = valid
-      self.test_data_handler = test
-    else:
-      self.tied_to = tied_to
-
-  def GetTestData(self):
-    if self.tied_to is None:
-      self.data = self.test_data_handler.Get()
-    else:
-      self.data.assign(self.tied_to.data)
-
-  def GetValidationData(self):
-    if self.tied_to is None:
-      self.data = self.validation_data_handler.Get()
-    else:
-      self.data.assign(self.tied_to.data)
-
   def SetData(self, data):
     self.data = data
-
-  def GetTrainData(self):
-    if self.tied_to is None:
-      self.data = self.train_data_handler.Get()
-    else:
-      self.data.assign(self.tied_to.data)
 
   def Show(self, train=False):
     """Displays useful statistics about the model."""
@@ -208,6 +181,9 @@ class Layer(object):
        self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
       self.expansion_matrix = cm.CUDAMatrix(np.eye(numlabels))
 
+    if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+      self.big_sample_matrix = cm.empty((numlabels * dimensions, 1000))
+
   def AllocateBatchsizeDependentMemory(self, batchsize):
     self.batchsize = batchsize
     if self.data:
@@ -232,8 +208,10 @@ class Layer(object):
         self.rowshift = cm.CUDAMatrix(
           numlabels*np.arange(dimensions * batchsize).reshape(1, -1))
     if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
-      norm_to = self.hyperparams.normalize_to
-      self.NN = cm.CUDAMatrix(norm_to + np.zeros((1, batchsize)))
+      #norm_to = self.hyperparams.normalize_to
+      self.NN = cm.CUDAMatrix(np.ones((1, batchsize)))
+      self.counter = cm.empty(self.NN.shape)  # Used for sampling softmaxes.
+      self.count_filter = cm.empty(self.NN.shape)  # Used for sampling softmaxes.
     if self.hyperparams.dropout:
       self.mask = cm.CUDAMatrix(np.zeros(self.state.shape))
 
@@ -254,33 +232,43 @@ class Layer(object):
     state = self.state
     sample = self.sample
     if self.activation == deepnet_pb2.Hyperparams.LOGISTIC:
-      state.sample_binomial(target=sample)
+      state.sample_bernoulli(target=sample)
     elif self.activation == deepnet_pb2.Hyperparams.TANH:
-      state.sample_binomial_tanh(target=sample)
+      state.sample_bernoulli_tanh(target=sample)
     elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR:
       state.sample_poisson(target=sample)
     elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR_SMOOTH:
       state.sample_poisson(target=sample)
     elif self.activation == deepnet_pb2.Hyperparams.LINEAR:
       #sample.assign(state)
+      #state.sample_gaussian(target=sample, mult=0.01)
       if self.learn_precision:
         sample.fill_with_randn()
         sample.div_by_col(self.params['precision'])
         sample.add(state)
-      #state.sample_gaussian(target=sample, mult=0.01)
     elif self.activation == deepnet_pb2.Hyperparams.SOFTMAX:
-      sample.fill_with_rand()
-      cm.log(sample)
-      sample.mult(-1)
-      sample.reciprocal()
-      sample.mult(state)
-      sample.argmax(axis=0, target=self.temp)
-      self.expansion_matrix.select_columns(self.temp, target=sample)
+      state.perturb(target=sample)
+      sample.choose_max(axis=0)
     elif self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
-      if self.proto.hyperparams.normalize:
+      if self.proto.hyperparams.adaptive_prior > 0:
         sample.assign(0)
         temp_sample = self.expanded_batch
-        numsamples = int(self.proto.hyperparams.normalize_to)
+        numsamples = int(self.proto.hyperparams.adaptive_prior)
+        for i in range(numsamples):
+          state.perturb(target=temp_sample)
+          temp_sample.choose_max_and_accumulate(sample)
+      else:
+        """
+        exact = False
+        sample.assign(0)
+        temp_sample = self.expanded_batch
+        if exact:
+          numsamples = int(self.NN.asarray().max())
+        else:  # ~ 5-7x faster than exact, almost as good.
+          numsamples = int(self.NN.asarray().mean())
+        counter = self.counter
+        count_filter = self.count_filter
+        counter.assign(self.NN)
         for i in range(numsamples):
           temp_sample.fill_with_rand()
           cm.log(temp_sample)
@@ -289,18 +277,35 @@ class Layer(object):
           temp_sample.max(axis=0, target=self.temp)
           temp_sample.add_row_mult(self.temp, -1)
           temp_sample.less_than(0)
+          temp_sample.mult(-1)
+          temp_sample.add(1)
+          counter.greater_than(0, target=count_filter)
+          temp_sample.mult_by_row(count_filter)
           sample.add(temp_sample)
-        sample.subtract(numsamples)
-        sample.mult(-1)
-      else:  # This is an approximation.
-        sample.fill_with_rand()
-        cm.log(sample)
-        sample.mult(-1)
-        sample.reciprocal()
-        sample.mult(state)
-        sample.argmax(axis=0, target=self.temp)
-        self.expansion_matrix.select_columns(self.temp, target=sample)
-        sample.mult_by_row(self.NN)
+          counter.subtract(1)
+        if not exact:
+          sample.sum(axis=0, target=self.temp)
+          self.temp.add(self.tiny)
+          self.NN.divide(self.temp, target=self.temp)
+          sample.mult_by_row(self.temp)
+        """
+        NN = self.NN.asarray().reshape(-1)
+        numdims, batchsize = self.state.shape
+        max_samples = self.big_sample_matrix.shape[1]
+        for i in range(batchsize):
+          nn = NN[i]
+          factor = 1
+          if nn > max_samples:
+            nn = max_samples
+            factor = float(nn) / max_samples
+          samples = self.big_sample_matrix.slice(0, nn)
+          samples.assign(0)
+          samples.add_col_vec(self.state.slice(i, i+1))
+          samples.perturb()
+          samples.choose_max(axis=0)
+          if factor > 1:
+            samples.mult(factor)
+          samples.sum(axis=1, target=sample.slice(i, i+1))
     else:
       raise Exception('Unknown activation')
 
@@ -322,8 +327,7 @@ class Layer(object):
       state.add_row_mult(self.temp, -1)
       cm.exp(state)
       state.sum(axis=0, target=self.temp)
-      self.temp.reciprocal()
-      state.mult_by_row(self.temp)
+      state.div_by_row(self.temp)
     elif self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
       state.max(axis=0, target=self.temp)
       state.add_row_mult(self.temp, -1)
@@ -379,13 +383,12 @@ class Layer(object):
         output_t = edge.output_t
       n_locs = (n_locs - conv.pool_size) / conv.pool_stride + 1
       if conv.prob:
-        # Get Gumbel variates.
         rnd = edge.rnd
         rnd.fill_with_rand()
         cm.log(rnd)
         rnd.mult(-1)
-        cm.log(rnd)
-        rnd.mult(-1)
+        #cm.log(rnd)
+        #rnd.mult(-1)
         cc.ProbMaxPool(input_t, rnd, output_t, num_filters, conv.pool_size, 0, conv.pool_stride, n_locs)
       else:
         cc.MaxPool(input_t, output_t, num_filters, conv.pool_size, 0, conv.pool_stride, n_locs)
@@ -408,12 +411,20 @@ class Layer(object):
     else:
       self.state.assign(self.data)
     if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+      h = self.hyperparams
       self.state.sum(axis=0, target=self.NN)
-      if self.hyperparams.normalize:  # normalize word count vector.
-        self.NN.add(self.tiny)
+      self.NN.add(self.tiny)  # To deal with documents of 0 words.
+      if h.multiplicative_prior > 0:
+        self.NN.mult(1 + h.multiplicative_prior)
+        self.state.mult(1 + h.multiplicative_prior)
+      if h.additive_prior > 0:
         self.state.div_by_row(self.NN)
-        self.state.mult(self.hyperparams.normalize_to)
-        self.NN.assign(self.hyperparams.normalize_to)
+        self.NN.add(h.additive_prior)
+        self.state.mult_by_row(self.NN)
+      if h.adaptive_prior > 0:
+        self.state.div_by_row(self.NN)
+        self.state.mult(h.adaptive_prior)
+        self.NN.assign(h.adaptive_prior)
     if self.activation == deepnet_pb2.Hyperparams.LINEAR and\
        'precision' in self.params:
       self.state.mult_by_col(self.params['precision'])
@@ -431,8 +442,6 @@ class Layer(object):
     """
     logging.debug('ComputeUp in %s', self.name)
     self.dirty = False
-    if self.is_initialized:
-      return
     perf = None
     if self.is_input:
       self.GetData()
@@ -475,14 +484,22 @@ class Layer(object):
     if self.hyperparams.dropout:
       if train and maxsteps - step >= self.hyperparams.stop_dropout_for_last:
         # Randomly set states to zero.
-        self.mask.fill_with_rand()
-        self.mask.greater_than(self.hyperparams.dropout_prob)
-        if self.hyperparams.blocksize > 1:
-          self.mask.blockify(self.hyperparams.blocksize)
-        self.state.mult(self.mask)
+        if self.hyperparams.mult_dropout:
+          self.mask.fill_with_randn()
+          self.mask.add(1)
+          self.state.mult(self.mask)
+        else:
+          self.mask.fill_with_rand()
+          self.mask.greater_than(self.hyperparams.dropout_prob)
+          if self.hyperparams.blocksize > 1:
+            self.mask.blockify(self.hyperparams.blocksize)
+          self.state.mult(self.mask)
       else:
         # Produce expected output.
-        self.state.mult(1.0 - self.hyperparams.dropout_prob)
+        if self.hyperparams.mult_dropout:
+          pass
+        else:
+          self.state.mult(1.0 - self.hyperparams.dropout_prob)
     return perf
 
   def ComputeDown(self, step):
@@ -617,7 +634,6 @@ class Layer(object):
     num_filters = conv.num_filters
     num_colors = conv.num_colors
 
-    f, numdims = w.shape
     assert f == num_filters, 'f is %d but num_filters is %d' % (f, num_filters)
     if edge.conv:
       assert numdims == size**2 * num_colors
@@ -631,7 +647,6 @@ class Layer(object):
 
     n_locs = (x + 2 * padding - size) / stride + 1
 
-    #pdb.set_trace()
     # Incoming gradient.
     deriv.transpose(edge.output_t2)
     input_grads = edge.output_t2
@@ -669,7 +684,6 @@ class Layer(object):
                      0, strideX, n_pool_locs)
       input_grads = output_grads
       output_acts = input_acts
-    #pdb.set_trace()
     if self.is_input:
       return
 
@@ -740,7 +754,7 @@ class Layer(object):
         temp3 = self.dimsize
         unitcell = self.unitcell
  
-        cm.cross_entropy(data, state, target=deriv, tiny=self.tiny)
+        cm.cross_entropy_bernoulli(data, state, target=deriv, tiny=self.tiny)
         deriv.sum(axis=1, target=temp3)
         temp3.sum(axis=0, target=unitcell)
         cross_entropy = unitcell.euclid_norm()
@@ -790,12 +804,18 @@ class Layer(object):
         perf.cross_entropy = cross_entropy
         perf.correct_preds = correct_preds
     elif self.loss_function == deepnet_pb2.Layer.SQUARED_LOSS:
-      if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX and self.hyperparams.normalize:
-        self.data.sum(axis=0, target=self.temp)
-        self.temp.add(self.tiny)
-        self.data.div_by_row(self.temp, target=self.deriv)
-        self.deriv.mult(self.proto.hyperparams.normalize_to)
-        self.deriv.subtract(self.state)
+      if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+        if self.hyperparams.normalize_error:
+          self.data.sum(axis=0, target=self.temp)
+          self.temp.add(self.tiny)
+          self.data.div_by_row(self.temp, target=self.deriv)
+          self.state.div_by_row(self.NN, target=self.expanded_batch)
+          self.deriv.subtract(self.expanded_batch)
+        else:
+          self.data.sum(axis=0, target=self.temp)
+          self.temp.add(self.tiny)
+          self.state.div_by_row(self.temp, target=self.deriv)
+          self.deriv.subtract(self.data)
       elif self.activation == deepnet_pb2.Hyperparams.SOFTMAX:
         self.expansion_matrix.select_columns(self.data, target=self.expanded_batch)
         self.state.subtract(self.expanded_batch, target=self.deriv)

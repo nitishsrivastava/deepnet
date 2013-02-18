@@ -29,6 +29,7 @@ class DBMEdge(Edge):
       epsilon = h.base_epsilon / (1 + float(step) / h.epsilon_decay_half_life)
     elif h.epsilon_decay == deepnet_pb2.Hyperparams.EXPONENTIAL:
       epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
+
     if step < h.start_learning_after:
       epsilon = 0.0
 
@@ -53,14 +54,14 @@ class DBMEdge(Edge):
       h1 = self.node1.hyperparams
       h2 = self.node2.hyperparams
       if h1.sparsity:
-        self.node1.state.add_col_mult(self.node1.means_temp, -h1.sparsity_cost)
+        self.node1.state.add_col_mult(self.node1.means_temp, -1)
       if h2.sparsity:
-        self.node2.state.add_col_mult(self.node2.means_temp, -h2.sparsity_cost)
+        self.node2.state.add_col_mult(self.node2.means_temp, -1)
       cm.dot(self.node1.state, self.node2.state.T, target=self.suff_stats)
       if h1.sparsity:
-        self.node1.state.add_col_mult(self.node1.means_temp, h1.sparsity_cost)
+        self.node1.state.add_col_vec(self.node1.means_temp)
       if h2.sparsity:
-        self.node2.state.add_col_mult(self.node2.means_temp, h2.sparsity_cost)
+        self.node2.state.add_col_vec(self.node2.means_temp)
     else:
       self.suff_stats.add_dot(self.node1.state, self.node2.state.T, mult=-1.0)
     if self.node1.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:

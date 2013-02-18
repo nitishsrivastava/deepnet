@@ -20,17 +20,19 @@ def show_stats(edge, fig, title):
   plt.hist(edge.params['weight'].asarray().flatten(), 100)
   plt.draw()
 
-def display_hidden(state, fig, title, log=False):
+def display_hidden(state, fig, title, log=False, prob=True):
   plt.figure(fig)
   plt.clf()
   plt.suptitle(title)
   plt.subplot(1, 2, 1);
   plt.hist(state.mean(axis=1), 100)
-  plt.xlim([0, 1])
+  if prob:
+    plt.xlim([0, 1])
   plt.title('Mean Activation')
   plt.subplot(1, 2, 2);
   plt.hist(state.flatten(), 100, log=log)
-  plt.xlim([0, 1])
+  if prob:
+    plt.xlim([0, 1])
   plt.title('Activation')
   plt.draw()
 

@@ -18,7 +18,7 @@ def GetPerformanceStats(stat, prefix=''):
     s += ' %s_Acc: %.3f (%d/%d)' % (
       prefix, stat.correct_preds/stat.count, stat.correct_preds, stat.count)
   if stat.compute_error:
-    s += ' %s_E: %.3f' % (prefix, stat.error / stat.count)
+    s += ' %s_E: %.5f' % (prefix, stat.error / stat.count)
   if stat.compute_MAP and prefix != 'T':
     s += ' %s_MAP: %.3f' % (prefix, stat.MAP)
   if stat.compute_prec50 and prefix != 'T':
@@ -40,17 +40,17 @@ class NeuralNet(object):
     self.net = None
     if isinstance(net, deepnet_pb2.Model):
       self.net = net
-    elif isinstance(net, str):
+    elif isinstance(net, str) or isinstance(net, unicode):
       self.net = ReadModel(net)
     self.t_op = None
     if isinstance(t_op, deepnet_pb2.Operation):
       self.t_op = t_op
-    elif isinstance(t_op, str):
+    elif isinstance(t_op, str) or isinstance(net, unicode):
       self.t_op = ReadOperation(t_op)
     self.e_op = None
     if isinstance(e_op, deepnet_pb2.Operation):
       self.e_op = e_op
-    elif isinstance(e_op, str):
+    elif isinstance(e_op, str) or isinstance(net, unicode):
       self.e_op = ReadOperation(e_op)
     cm.CUDAMatrix.init_random(self.net.seed)
     np.random.seed(self.net.seed)
@@ -231,6 +231,8 @@ class NeuralNet(object):
       step += 1
       stop = stopcondition(step)
     if collect_predictions and stats:
+      predictions = predictions[:collect_pos]
+      targets = targets[:collect_pos]
       MAP, prec50, MAP_list, prec50_list = self.ComputeScore(predictions, targets)
       stat = stats[0]
       stat.MAP = MAP
@@ -243,12 +245,17 @@ class NeuralNet(object):
       sys.stdout.write(GetPerformanceStats(stat, prefix=prefix))
     stats_list.extend(stats)
 
+
   def ScoreOneLabel(self, preds, targets):
     """Computes Average precision and precision at 50."""
     targets_sorted = targets[(-preds.T).argsort().flatten(),:]
-    prec = targets_sorted.cumsum() / np.arange(1.0, 1 + targets.shape[0])
-    recall = targets_sorted.cumsum() / float(sum(targets))
-    ap = np.dot(prec, targets_sorted) / sum(targets)
+    cumsum = targets_sorted.cumsum()
+    prec = cumsum / np.arange(1.0, 1 + targets.shape[0])
+    total_pos = float(sum(targets))
+    if total_pos == 0:
+      total_pos = 1e-10
+    recall = cumsum / total_pos
+    ap = np.dot(prec, targets_sorted) / total_pos
     prec50 = prec[50]
     return ap, prec50
 
@@ -329,12 +336,11 @@ class NeuralNet(object):
       l = None
     return l
 
-  def Save(self):
+  def CopyModelToCPU(self):
     for layer in self.layer:
       layer.SaveParameters()
     for edge in self.edge:
       edge.SaveParameters()
-    util.WriteCheckpointFile(self)
 
   def ResetBatchsize(self, batchsize):
     self.batchsize = batchsize
@@ -343,32 +349,24 @@ class NeuralNet(object):
     for edge in self.edge:
       edge.AllocateBatchsizeDependentMemory()
 
-  def GetTrainBatch(self):
-    data_list = self.train_data_handler.Get()
-    if data_list[0].shape[1] != self.batchsize:
-      self.ResetBatchsize(data_list[0].shape[1])
-    for i, layer in enumerate(self.datalayer):
-      layer.SetData(data_list[i])
+  def GetBatch(self, handler=None):
+    if handler:
+      data_list = handler.Get()
+      if data_list[0].shape[1] != self.batchsize:
+        self.ResetBatchsize(data_list[0].shape[1])
+      for i, layer in enumerate(self.datalayer):
+        layer.SetData(data_list[i])
     for layer in self.tied_datalayer:
       layer.SetData(layer.tied_to.data)
+
+  def GetTrainBatch(self):
+    self.GetBatch(self.train_data_handler)
 
   def GetValidationBatch(self):
-    data_list = self.validation_data_handler.Get()
-    if data_list[0].shape[1] != self.batchsize:
-      self.ResetBatchsize(data_list[0].shape[1])
-    for i, layer in enumerate(self.datalayer):
-      layer.SetData(data_list[i])
-    for layer in self.tied_datalayer:
-      layer.SetData(layer.tied_to.data)
+    self.GetBatch(self.validation_data_handler)
 
   def GetTestBatch(self):
-    data_list = self.test_data_handler.Get()
-    if data_list[0].shape[1] != self.batchsize:
-      self.ResetBatchsize(data_list[0].shape[1])
-    for i, layer in enumerate(self.datalayer):
-      layer.SetData(data_list[i])
-    for layer in self.tied_datalayer:
-      layer.SetData(layer.tied_to.data)
+    self.GetBatch(self.test_data_handler)
 
   def SetUpData(self, skip_outputs=False):
     """Setup the data."""
@@ -447,13 +445,18 @@ class NeuralNet(object):
 
     collect_predictions = False
     try:
-      p = self.output_datalayer[0].proto.performance_stats
+      p = self.output_datalayer[0].proto.performance_statS
       if p.compute_MAP or p.compute_prec50:
         collect_predictions = True
     except Exception as e:
       pass
+    select_model_using_error = self.net.hyperparams.select_model_using_error
 
+    if select_model_using_error:
+      best_error = float('Inf')
+      best_net = CopyModel(self.net)
 
+    dump_best = False
     while not stop:
       sys.stdout.write('\rTrain Step: %d' % step)
       sys.stdout.flush()
@@ -465,8 +468,6 @@ class NeuralNet(object):
       else:
         stats = losses
       step += 1
-      if self.ShowNow(step):
-        self.Show()
       if self.EvalNow(step):
         # Print out training stats.
         sys.stdout.write('\rStep %d ' % step)
@@ -476,16 +477,28 @@ class NeuralNet(object):
         stats = []
         # Evaluate on validation set.
         self.Evaluate(validation=True, collect_predictions=collect_predictions)
+        if select_model_using_error:
+          stat = self.net.validation_stats[-1]
+          error = stat.error / stat.count
+          if error < best_error:
+            best_error = error
+            dump_best = True
+            self.CopyModelToCPU()
+            self.t_op.current_step = step
+            best_net = CopyModel(self.net)
+            best_t_op = CopyOperation(self.t_op)
         # Evaluate on test set.
         self.Evaluate(validation=False, collect_predictions=collect_predictions)
-        """
-        p = self.layer[0].params['precision'].asarray()
-        sys.stdout.write(' prec: %.4f %.4f' % (p.max(), p.min()))
-        b = self.layer[0].params['bias'].asarray()
-        sys.stdout.write(' bias: %.4f %.4f' % (b.max(), b.min()))
-        """
         sys.stdout.write('\n')
+        if self.ShowNow(step):
+          self.Show()
       if self.SaveNow(step):
         self.t_op.current_step = step
-        self.Save()
+        self.CopyModelToCPU()
+        util.WriteCheckpointFile(self.net, self.t_op)
+        if dump_best:
+          dump_best = False
+          print 'Best error : %.4f' % best_error
+          util.WriteCheckpointFile(best_net, best_t_op, best=True)
+
       stop = self.TrainStopCondition(step)

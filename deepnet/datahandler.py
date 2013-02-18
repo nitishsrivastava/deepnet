@@ -556,7 +556,7 @@ class DataHandler(object):
     vectorsize_bytes = typesize * numdims
     batchsize_bytes = vectorsize_bytes * batchsize
     max_gpu_capacity = (max_gpu_capacity / batchsize_bytes) * batchsize_bytes
-    max_cpu_capacity = (max_cpu_capacity / batchsize_bytes) * batchsize_bytes
+    #max_cpu_capacity = (max_cpu_capacity / batchsize_bytes) * batchsize_bytes
 
     # Don't need more than total dataset size.
     gpu_capacity = min(total_disk_space, max_gpu_capacity) 

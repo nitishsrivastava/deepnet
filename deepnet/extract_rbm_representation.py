@@ -2,7 +2,7 @@ from neuralnet import *
 from trainer import *
 
 def ExtractRepresentations(model_file, train_op_file, layernames,
-                           base_output_dir, memory='1G',
+                           base_output_dir, memory='10G',
                            datasets=['train', 'validation', 'test'],
                            gpu_mem='2G', main_mem='30G'):
 
@@ -35,15 +35,11 @@ def ExtractRepresentations(model_file, train_op_file, layernames,
       os.makedirs(output_dir)
     print 'Writing to %s' % output_dir
     size = net.WriteRepresentationToDisk(
-      layernames, output_dir, memory=memory, dataset=dataset)
+      layernames, output_dir, memory=memory, dataset=dataset, input_recon=True)
     # Write protocol buffer.
     tag = dataset
-    """
-    if dataset == 'train':
-      tag = 'unlabelled'
-    else:
-      tag = 'labelled'
-    """
+    if size is None:
+      continue
     for i, lname in enumerate(layernames):
       layer = net.GetLayerByName(lname)
       data = data_pb.data.add()
@@ -61,6 +57,7 @@ def main():
   layername = sys.argv[3]
   output_dir = sys.argv[4]
   datasets = ['train', 'validation', 'test']
+  #datasets = ['validation', 'test']
   #datasets = ['test']
   gpu_mem = '2G'
   main_mem = '30G'

@@ -20,25 +20,34 @@ def NumpyAsParameter(numpy_array):
   assert numpy_array.dtype == 'float32', 'Saved arrays should be float32.'
   return numpy_array.tostring()
 
-def WriteCheckpointFile(model):
+def WriteCheckpointFile(net, t_op, best=False):
   """Writes out the model to disk."""
-  checkpoint_file = '%s_%s' % (model.net.name,
-                               time.strftime('%s'))
-  checkpoint_file = os.path.join(model.t_op.checkpoint_directory,
-                                 checkpoint_file)
-  print 'Writing checkpoint %s' % checkpoint_file
+  ckpt_dir = t_op.checkpoint_directory
+  if best:
+    tag = 'BEST'
+    checkpoint_file = '%s_%s' % (net.name, tag)
+    checkpoint_file = os.path.join(ckpt_dir, checkpoint_file)
+    print 'Writing current best model %s' % checkpoint_file
+    f = gzip.open(checkpoint_file, 'wb')
+    f.write(net.SerializeToString())
+    f.close()
+  else:
+    tag = 'LAST'
+    checkpoint_file = '%s_%s' % (net.name, time.strftime('%s'))
+    checkpoint_file = os.path.join(ckpt_dir, checkpoint_file)
+    print 'Writing checkpoint %s' % checkpoint_file
+    f = gzip.open(checkpoint_file, 'wb')
+    f.write(net.SerializeToString())
+    f.close()
+    checkpoint_file_LAST = '%s_%s' % (net.name, tag)
+    checkpoint_file_LAST = os.path.join(ckpt_dir, checkpoint_file_LAST)
+    shutil.copyfile(checkpoint_file, checkpoint_file_LAST)
+
+  # Save the t_op.
+  checkpoint_file_op = '%s_train_op_%s' % (net.name, tag)
+  checkpoint_file = os.path.join(ckpt_dir, checkpoint_file_op)
   f = gzip.open(checkpoint_file, 'wb')
-  f.write(model.net.SerializeToString())
-  f.close()
-  checkpoint_file_LAST = '%s_%s' % (model.net.name, 'LAST')
-  checkpoint_file_LAST = os.path.join(model.t_op.checkpoint_directory,
-                                      checkpoint_file_LAST)
-  shutil.copyfile(checkpoint_file, checkpoint_file_LAST)
-  checkpoint_file_op = '%s_train_op_%s' % (model.net.name, 'LAST')
-  checkpoint_file = os.path.join(model.t_op.checkpoint_directory,
-                                 checkpoint_file_op)
-  f = gzip.open(checkpoint_file, 'wb')
-  f.write(model.t_op.SerializeToString())
+  f.write(t_op.SerializeToString())
   f.close()
 
 def ReadOperation(proto_file):
@@ -77,10 +86,21 @@ def ReadData(proto_file):
     f.close()
   return proto
 
+def CopyOperation(op):
+  copy = deepnet_pb2.Operation()
+  copy.CopyFrom(op)
+  return copy
+
 def CopyModel(model):
   copy = deepnet_pb2.Model()
   copy.CopyFrom(model)
   return copy
+
+def CopyLayer(layer):
+  copy = deepnet_pb2.Layer()
+  copy.CopyFrom(layer)
+  return copy
+
 
 # For Navdeep's data.
 def save(fname, var_list, source_dict):

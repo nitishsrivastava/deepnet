@@ -36,7 +36,7 @@ def ExtractRepresentations(model_file, train_op_file, layernames,
       layernames, output_dir, memory=memory, dataset=dataset)
     # Write protocol buffer.
     for i, lname in enumerate(layernames):
-      if size[i] == 0:
+      if not size or size[i] == 0:
         continue
       layer = net.GetLayerByName(lname)
       data = data_pb.data.add()

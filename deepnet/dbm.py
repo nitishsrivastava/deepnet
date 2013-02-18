@@ -6,6 +6,10 @@ import logging
 
 class DBM(NeuralNet):
 
+  def __init__(self, *args, **kwargs):
+    super(DBM, self).__init__(*args, **kwargs)
+    self.initializer_net = None
+
   @staticmethod
   def AreInputs(l):
     return reduce(lambda a, x: x.is_input and a, l, True)
@@ -47,6 +51,9 @@ class DBM(NeuralNet):
       self.neg_phase_order = node_list
     return node_list
 
+  def ComputeUnnormalizedLogProb(self):
+    pass
+    
   def PositivePhase(self, train=False, evaluate=False, step=0):
     """Perform the positive phase.
 
@@ -58,17 +65,22 @@ class DBM(NeuralNet):
     for node in self.node_list:
       node.SetPhase(pos=True)
 
-    # Starting MF.
+    # Do a forward pass in the initializer net, if set.
+    if self.initializer_net:
+      self.initializer_net.ForwardPropagate(train=train, step=step)
+
+    # Initialize layers.
     for node in self.node_list:
       if node.is_input:
         # Load data into input nodes.
         node.ComputeUp(train=train)
       elif node.is_initialized:
-        node.GetData()
+        node.state.assign(node.initialization_source.state)
       else:
         # Initialize other nodes to zero.
         node.ResetState(rand=False)
 
+    # Starting MF.
     for i in range(self.net.hyperparams.mf_steps):
       for node in self.pos_phase_order:
         node.ComputeUp(train=train, step=step, maxsteps=self.train_stop_steps)
@@ -118,12 +130,13 @@ class DBM(NeuralNet):
         if not node.is_input:
           node.Sample()
 
-    step_up_after = self.net.hyperparams.step_up_cd_after
     if gibbs_steps < 0:
-      if step_up_after > 0:
-        gibbs_steps = self.net.hyperparams.gibbs_steps + step / step_up_after
+      h = self.net.hyperparams
+      start_after = h.start_step_up_cd_after
+      if start_after > 0 and start_after < step:
+        gibbs_steps = h.gibbs_steps + 1 + (step - start_after) / h.step_up_cd_after
       else:
-        gibbs_steps = self.net.hyperparams.gibbs_steps
+        gibbs_steps = h.gibbs_steps
 
     for i in range(gibbs_steps):
       for node in self.neg_phase_order:
@@ -131,9 +144,12 @@ class DBM(NeuralNet):
         if (i == 0 and node.is_input
             and self.t_op.optimizer == deepnet_pb2.Operation.CD):
           losses.append(node.GetLoss())
-        if node.is_input and not node.sample_input:
-          # Not sampling inputs usually makes learning faster.
-          node.sample.assign(node.state)
+        if node.is_input:
+            if node.sample_input and node.hyperparams.sample_input_after <= step:
+              node.Sample()
+            else:
+              # Not sampling inputs usually makes learning faster.
+              node.sample.assign(node.state)
         else:
           node.Sample()
     # End of Gibbs Sampling.
@@ -209,6 +225,11 @@ class DBM(NeuralNet):
         node.pos_state.assign(node.neg_state)
         node.pos_sample.assign(node.neg_sample)
 
+  def GetBatch(self, handler=None):
+    super(DBM, self).GetBatch(handler=handler)
+    if self.initializer_net:
+      self.initializer_net.GetBatch()
+
   def TrainOneBatch(self, step):
     losses1 = self.PositivePhase(train=True, step=step)
     if step == 0:
@@ -225,6 +246,32 @@ class DBM(NeuralNet):
   def EvaluateOneBatch(self):
     losses = self.PositivePhase(train=False, evaluate=True)
     return losses
+
+  def SetUpData(self, *args, **kwargs):
+    super(DBM, self).SetUpData(*args, **kwargs)
+
+    # Set up data for initializer net.
+    if self.initializer_net:
+      for node in self.initializer_net.layer:
+        try:
+          matching_dbm_node = next(l for l in self.layer \
+                              if l.name == node.name)
+        except StopIteration:
+          matching_dbm_node = None
+        if matching_dbm_node:
+          if node.is_input or node.is_output:
+            self.initializer_net.tied_datalayer.append(node)
+            node.tied_to = matching_dbm_node
+          elif matching_dbm_node.is_initialized:
+            matching_dbm_node.initialization_source = node
+
+
+  def LoadModelOnGPU(self, batchsize=-1):
+    super(DBM, self).LoadModelOnGPU(batchsize=batchsize)
+    if self.net.initializer_net:
+      self.initializer_net = NeuralNet(self.net.initializer_net, self.t_op,
+                                     self.e_op)
+      self.initializer_net.LoadModelOnGPU(batchsize=batchsize)
 
   def Reconstruct(self, layername, numbatches, inputlayername=[],
                   validation=True):
@@ -286,7 +333,7 @@ class DBM(NeuralNet):
     return dict(zip(names, rep_list))
 
   def WriteRepresentationToDisk(self, layernames, output_dir, memory='1G',
-                                dataset='test'):
+                                dataset='test', input_recon=False):
     layers = [self.GetLayerByName(lname) for lname in layernames]
     numdim_list = [layer.state.shape[0] for layer in layers]
     if dataset == 'train':
@@ -313,11 +360,12 @@ class DBM(NeuralNet):
       datagetter()
       sys.stdout.write('\r%d' % (batch+1))
       sys.stdout.flush()
-      self.PositivePhase(train=False, evaluate=False)
+      self.PositivePhase(train=False, evaluate=input_recon)
       reprs = [l.state.asarray().T for l in layers]
       datawriter.Submit(reprs)
     sys.stdout.write('\n')
-    return datawriter.Commit()
+    size = datawriter.Commit()
+    return size
 
   def GetRepresentation(self, layername, numbatches, inputlayername=[],
                         validation=True):

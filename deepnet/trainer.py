@@ -23,7 +23,7 @@ def LockGPU(max_retries=10):
 
 def FreeGPU(board):
   cm.cublas_shutdown()
-  gpu_lock.free_lock(board)
+  #gpu_lock.free_lock(board)
 
 def LoadExperiment(model_file, train_op_file, eval_op_file):
   model = util.ReadModel(model_file)

@@ -11,6 +11,7 @@ class DBMLayer(Layer):
     self.pos_phase = True
     self.sample_input = False
     super(DBMLayer, self).__init__(*args, **kwargs)
+    self.is_initialized = self.proto.is_initialized
 
   def LoadParams(self, proto):
     super(DBMLayer, self).LoadParams(proto)
@@ -163,6 +164,37 @@ class DBMLayer(Layer):
         # Produce expected output.
         self.state.mult(1.0 - self.hyperparams.dropout_prob)
 
+  def AddSparsityGradient(self):
+    h = self.hyperparams
+    damping = h.sparsity_damping
+    target = h.sparsity_target
+    cost = h.sparsity_cost
+
+    # Update \hat{\rho}.
+    self.means.mult(damping)
+    self.means.add_mult(self.suff_stats, alpha=(1-damping)/self.batchsize)
+
+    # Compute gradient.
+    self.means_temp2.assign(1)
+    if self.activation == deepnet_pb2.Hyperparams.LOGISTIC:
+      self.means_temp2.subtract(self.means)
+      self.means_temp2.mult(self.means)
+    elif self.activation == deepnet_pb2.Hyperparams.TANH:
+      self.means_temp2.subtract(self.means, target=self.means_temp)
+      self.means_temp2.add(self.means)
+      self.means_temp2.mult(self.means_temp)
+    elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR:
+      self.means_temp2.assign(self.means)
+    elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR_SMOOTH:
+      self.means_temp2.assign(self.means)
+
+    self.means.subtract(target, target=self.means_temp)
+    self.means_temp.divide(self.means_temp2)
+    self.means_temp.mult(cost)
+
+    # Add to the suff stats.
+    self.suff_stats.add_mult(self.means_temp, alpha=-self.batchsize)
+
   def CollectSufficientStatistics(self):
     """Collect sufficient statistics for this layer."""
     logging.debug('Collecting suff stats %s', self.name)
@@ -174,12 +206,7 @@ class DBMLayer(Layer):
     if self.pos_phase:
       self.state.sum(axis=1, target=self.suff_stats)
       if h.sparsity:
-        damping = h.sparsity_damping
-        self.means.mult(damping)
-        self.means.add_mult(self.suff_stats, alpha=(1-damping)/self.batchsize)
-        self.means.subtract(h.sparsity_target, target=self.means_temp)
-        self.suff_stats.add_mult(self.means_temp,
-                                 alpha=-self.batchsize * h.sparsity_cost)
+        self.AddSparsityGradient()
       if self.learn_precision:
         temp = self.deriv
         b = self.params['bias']

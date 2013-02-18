@@ -32,6 +32,7 @@ message Layer {
   optional DataField data_field = 11;
   optional deepnet.Metrics performance_stats = 12;
   repeated int32 shape = 13;
+  optional bool is_initialized = 14 [default=false];
 }
 
 message Parameter {
@@ -135,10 +136,23 @@ message Hyperparams {
   optional int32 shift_amt_x = 40 [default=0];
   optional int32 blocksize = 41 [default=1];  // block size for group dropout
   optional int32 shift_amt_y = 42 [default=0];
-  optional float sc_alpha = 43 [default=1.0]; // alpha in Predictive Sparse Decomp.
-  optional float sc_beta = 44 [default=0.01]; // beta in Predictive Sparse Decomp.
-  optional int32 switch_on_sc_alpha_after = 45 [default=0];
-  optional bool sample_input = 46 [default=false]; // sample inputs when training RBMs.
+  optional float sc_alpha = 43 [default=0]; // alpha in Predictive Sparse Decomp.
+  optional float sc_beta = 44 [default=0]; // beta in Predictive Sparse Decomp.
+  optional float sc_gamma = 45 [default=0]; // gamma in PSD.
+  optional bool sample_input = 46 [default=false];  // sample inputs when training RBMs.
+  optional bool mult_dropout = 47 [default=false];  // Multiplicative gaussian dropout.
+  optional bool select_model_using_error = 48 [default=false];
+  
+  // In DBMs/RBMs start sampling inputs after these many steps (if sample_input is true).
+  optional int32 sample_input_after = 49 [default=0];
+
+  // Replicated softmax models with replicated priors.
+  optional int32 additive_prior = 50 [default=0];
+  optional int32 multiplicative_prior = 51 [default=0];
+  optional int32 adaptive_prior = 52 [default=0];
+  optional bool normalize_error = 53 [default=false];
+  
+  optional int32 start_step_up_cd_after = 54 [default=0];
 }
 
 message Edge {
@@ -175,6 +189,7 @@ message Model {
   // For DBMs.
   repeated string positive_phase_order = 10;
   repeated string negative_phase_order = 11;
+  optional string initializer_net = 12;
 }
 
 message Operation {
