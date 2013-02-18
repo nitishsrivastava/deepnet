@@ -63,7 +63,7 @@ __global__ void kRandomDropout(unsigned int* rndMults, unsigned long long* rndWo
     rndWords[idx] = rndWord;
 }
 
-__global__ void kSampleBinomial(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
+__global__ void kSampleBernoulli(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned long long rndWord = rndWords[idx];
     const unsigned int rndMult = rndMults[idx];
@@ -74,7 +74,7 @@ __global__ void kSampleBinomial(unsigned int* rndMults, unsigned long long* rndW
     }
     rndWords[idx] = rndWord;
 }
-__global__ void kSampleBinomialTanh(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
+__global__ void kSampleBernoulliTanh(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned long long rndWord = rndWords[idx];
     const unsigned int rndMult = rndMults[idx];
@@ -119,14 +119,17 @@ __global__ void kSampleGaussian(unsigned int* rndMults, unsigned long long* rndW
     rndWords[idx] = rndWord;
 }
 
-__global__ void kSampleSoftmax(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
+
+__global__ void kPerturb(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned long long rndWord = rndWords[idx];
     const unsigned int rndMult = rndMults[idx];
+    float rnd;
 
     for(unsigned int i = idx; i < numElements; i += NUM_RND_STREAMS) {
         rndWord = rndMult * LOW_BITS(rndWord) + HIGH_BITS(rndWord);
-        target[i] = gData[i];
+        rnd = (__uint2float_rn(LOW_BITS(rndWord)) + 1.0f) / 4294967296.0f;
+        target[i] = - gData[i] / logf(rnd);
     }
     rndWords[idx] = rndWord;
 }
@@ -285,6 +288,57 @@ __global__ void kSumAll(float* mat, unsigned int len) {
     }
 }
 
+__global__ void kCumsum(float *mat, float *target, float *temp, unsigned int height) { 
+  // extern  __shared__  float temp[];// allocated on invocation
+  const int thid = threadIdx.x;
+  if (2*thid < height) {
+    const int super_offset = blockIdx.x * height;
+    target += super_offset;
+    mat += super_offset;
+    temp += super_offset;
+    int offset = 1;
+    //float s = 0.0;
+    temp[2*thid]   = mat[2*thid]; // load input into shared memory 
+    temp[2*thid+1] = mat[2*thid+1]; 
+    for (int d = height>>1; d > 0; d >>= 1) {// build sum in place up the tree 
+      __syncthreads(); 
+      if (thid < d) {
+        int ai = offset*(2*thid+1)-1; 
+        int bi = offset*(2*thid+2)-1; 
+        temp[bi] += temp[ai];
+      } else if (thid == d && thid % 2 == 1) {
+        //int bi = offset*(2*thid+2)-1; 
+        //temp[bi] += temp[ai];
+
+      }
+
+      offset *= 2;
+    }
+    if (thid == 0) { temp[height - 1] = 0; } // clear the last element 
+    for (int d = 1; d < height; d *= 2)  { // traverse down tree & build scan 
+      offset >>= 1; 
+      __syncthreads(); 
+      if (thid < d) {
+        int ai = offset*(2*thid+1)-1; 
+        int bi = offset*(2*thid+2)-1; 
+        float t   = temp[ai]; 
+        temp[ai]  = temp[bi]; 
+        temp[bi] += t; 
+      } 
+    } 
+    __syncthreads();
+    // write results to device memory 
+  //  if (thid == -1) {
+  //    target[0]   = temp[1];
+  //    target[height-1] = s;
+  //  } else {
+      target[2*thid]   = temp[2*thid];
+      target[2*thid+1] = temp[2*thid+1];
+  //  }
+  }
+
+}
+
 
 __global__ void kMaxColumnwise(float* mat, float* target, unsigned int width, unsigned int height) {
     __shared__ float max_vals[32];
@@ -312,6 +366,76 @@ __global__ void kMaxColumnwise(float* mat, float* target, unsigned int width, un
         target[blockIdx.x] = cur_max;
     }
 }
+
+__global__ void kChooseMaxAndAccumulate(float* mat, float* acc, unsigned int height) {
+    __shared__ float max_vals[32];
+    __shared__ unsigned int max_val_args[32];
+    float cur_max = -FLT_MAX;
+    unsigned int cur_argmax = 0;
+    float val = 0;
+ 
+    for (unsigned int i = threadIdx.x; i < height; i += 32) {
+        val = mat[blockIdx.x * height + i];
+        if (val > cur_max) {
+            cur_max = val;
+            cur_argmax = i;
+        }
+    }
+
+    max_vals[threadIdx.x] = cur_max;
+    max_val_args[threadIdx.x] = cur_argmax;
+
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        cur_max = -FLT_MAX;
+        cur_argmax = 0;
+
+        for (unsigned int i = 0; i < 32; i++)
+            if (max_vals[i] > cur_max) {
+                cur_max = max_vals[i];
+                cur_argmax = max_val_args[i];
+            }
+        acc[blockIdx.x * height + cur_argmax] += 1;
+    }
+}
+
+
+__global__ void kChooseMaxColumnwise(float* mat, float* target, unsigned int height) {
+    __shared__ float max_vals[32];
+    __shared__ unsigned int max_val_args[32];
+    float cur_max = -FLT_MAX;
+    unsigned int cur_argmax = 0;
+    float val = 0;
+ 
+    for (unsigned int i = threadIdx.x; i < height; i += 32) {
+        val = mat[blockIdx.x * height + i];
+        target[blockIdx.x * height + i] = 0;
+
+        if (val > cur_max) {
+            cur_max = val;
+            cur_argmax = i;
+        }
+    }
+
+    max_vals[threadIdx.x] = cur_max;
+    max_val_args[threadIdx.x] = cur_argmax;
+
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        cur_max = -FLT_MAX;
+        cur_argmax = 0;
+
+        for (unsigned int i = 0; i < 32; i++)
+            if (max_vals[i] > cur_max) {
+                cur_max = max_vals[i];
+                cur_argmax = max_val_args[i];
+            }
+        target[blockIdx.x * height + cur_argmax] = 1;
+    }
+}
+
 
 __global__ void kArgMaxColumnwise(float* mat, float* target, unsigned int width, unsigned int height) {
     __shared__ float max_vals[32];
@@ -433,6 +557,21 @@ __global__ void kApplyAbs(float* mat, float* target, unsigned int len) {
     }
 }
 
+__global__ void kApplyLog1PlusExpExact(float* mat, float* target, unsigned int len) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+    float mat_i;
+
+    for (unsigned int i = idx; i < len; i += numThreads) {
+        mat_i = mat[i];
+        if (mat_i > 0)
+            target[i] = (log(1 + exp(-mat_i)) + mat_i);
+        else
+            target[i] = log(1 + exp(mat_i));
+    }
+}
+
+
 __global__ void kApplyLog1PlusExp(float* mat, float* target, unsigned int len) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int numThreads = blockDim.x * gridDim.x;
@@ -447,12 +586,12 @@ __global__ void kApplyLog1PlusExp(float* mat, float* target, unsigned int len) {
     }
 }
 
-__global__ void kLog(float* mat, float* target, unsigned int len) {
+__global__ void kLog(float* mat, float* target, unsigned int len, float tiny) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int numThreads = blockDim.x * gridDim.x;
 
     for (unsigned int i = idx; i < len; i += numThreads) {
-        target[i] = __logf(mat[i]);
+        target[i] = __logf(mat[i] + tiny);
     }
 }
 
@@ -515,6 +654,14 @@ __global__ void kCrossEntropy(float* mat, float* p, float* target, unsigned int 
     const unsigned int numThreads = blockDim.x * gridDim.x;
 
     for (unsigned int i = idx; i < len; i += numThreads) {
+        target[i] = -mat[i] * __logf(p[i] + tiny);
+    }
+}
+__global__ void kCrossEntropyBernoulli(float* mat, float* p, float* target, unsigned int len, float tiny) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+
+    for (unsigned int i = idx; i < len; i += numThreads) {
         target[i] = -mat[i] * __logf(p[i] + tiny) - (1 - mat[i]) * __logf(1 - p[i] + tiny);
     }
 }
@@ -545,7 +692,41 @@ __global__ void kAddColVector(float* mat, float* vec, float* tgtMat, unsigned in
         tgtMat[i] = mat[i] + vec[i % height];
     }
 }
+__global__ void kAddDiagonalScalar(float* mat, float val, float* tgtMat, unsigned int width) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
 
+    for (unsigned int i = idx; i < width; i += numThreads) {
+        tgtMat[width*i + i] = mat[width*i + i] + val;
+    }
+}
+
+__global__ void kAddDiagonal(float* mat, float* vec, float* tgtMat, unsigned int width) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+
+    for (unsigned int i = idx; i < width; i += numThreads) {
+        tgtMat[width*i + i] = mat[width*i + i] + vec[i];
+    }
+}
+
+__global__ void kMultDiagonalScalar(float* mat, float val, float* tgtMat, unsigned int width) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+
+    for (unsigned int i = idx; i < width; i += numThreads) {
+        tgtMat[width*i + i] = mat[width*i + i] * val;
+    }
+}
+
+__global__ void kMultDiagonal(float* mat, float* vec, float* tgtMat, unsigned int width) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+
+    for (unsigned int i = idx; i < width; i += numThreads) {
+        tgtMat[width*i + i] = mat[width*i + i] * vec[i];
+    }
+}
 __global__ void kAddRowVector(float* mat, float* vec, float* tgtMat, unsigned int width, unsigned int height) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int numThreads = blockDim.x * gridDim.x;
