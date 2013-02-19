@@ -1,0 +1,12 @@
+INSTALLATION INSTRUCTIONS:
+
+0. Install numpy and nose.
+
+1. Install the CUDA SDK.
+
+2. Run make in the cudamat directory.
+
+3. Make sure everything works by running the test cases:
+
+   python test_cudamat.py
+

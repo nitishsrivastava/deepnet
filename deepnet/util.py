@@ -74,6 +74,10 @@ def ReadModel(proto_file):
     f.close()
   return proto
 
+def WritePbtxt(output_file, pb):
+  with open(output_file, 'w') as f:
+    text_format.PrintMessage(pb, f)
+
 def ReadData(proto_file):
   protoname, ext = os.path.splitext(proto_file)
   proto = deepnet_pb2.Dataset()
