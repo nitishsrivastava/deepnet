@@ -51,12 +51,12 @@ University of Toronto.
 (5) RUN EXAMPLES
   - Download and extract the MNIST dataset from http://www.cs.toronto.edu/~nitish/deepnet/mnist.tar.gz
     This dataset consists of labelled images of handwritten digits as numpy files.
-  - cd to the deepnet/examples dir
+  - cd to the deepnet/deepnet/examples dir
   - run
     $ python setup_examples.py <path to mnist dataset> <output path>
     This will modify the example models and trainers to use the specified paths.
   - There are examples of different deep learning models. Go to any one and
-    execute runall.sh. For example, cd to deepnet/examples/rbm and execute
+    execute runall.sh. For example, cd to deepnet/deepnet/examples/rbm and execute
     $ ./runall.sh
     This should start training an RBM model.
   
