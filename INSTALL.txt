@@ -1,0 +1,67 @@
+#########################################
+INSTALLATION INSTRUCTIONS FOR DEEPNET
+
+Nitish Srivastava
+University of Toronto.
+#########################################
+
+(1) DEPENDENCIES
+  - Numpy
+  - Scipy
+  - CUDA 4.2 Toolkit and SDK.
+    Install the toolkit and SDK.
+    Set an environment variable CUDA_BIN to the path to the /bin directory of
+    the cuda installation and CUDA_LIB to the path to the /lib64 (or /lib)
+    directory. Also add them to PATH and LD_LIBARAY_PATH.
+   
+    For example, add the following lines to your ~/.bashrc file
+      export CUDA_BIN=/pkgs_local/cuda-4.2/bin
+      export CUDA_LIB=/pkgs_local/cuda-4.2/lib64
+      export PATH=${CUDA_BIN}:$PATH
+      export LD_LIBRARY_PATH=${CUDA_LIB}:$LD_LIBRARY_PATH
+      export CPLUS_INCLUDE_PATH=CPLUS_INCLUDE_PATH:/pkgs_local/cuda-4.2/cuda/include
+
+  - Protocol Buffers.
+    Available from http://code.google.com/p/protobuf/
+    Make sure that the PATH environment variable includes the directory that
+    contains the protocol buffer compiler - protoc.
+	  For example,
+      export PATH=$HOME/local/bin:$PATH
+
+(2) COMPILING CUDAMAT
+  DeepNet uses Vlad Mnih's cudamat library. Some additional kernels have been
+  added. To compile the library -
+  - run make in the cudamat dir.
+
+(3) COMPILING CUDAMAT_CONV
+  DeepNet uses Vlad Mnih's cudamat_conv wrapper for Alex Krizhevsky's
+  cuda-convnet library. Some additional kernels have been added. To compile the
+  library -
+  - Edit the paths in cudamat_conv/build.sh.
+  - run build.sh in cudamat_conv
+
+(4) SET ENVIRONMENT VARIABLES
+  - Add the path to cudamat and cudamat_conv to LD_LIBRARY_PATH. For example if
+    DeepNet is located in the home dir,
+      export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/deepnet/cudamat:$HOME/deepnet/cudamat_conv
+  - Add the path to DeepNet to PYTHONPATH. For example, if DeepNet is located in the
+    home dir,
+      export PYTHONPATH=$HOME/deepnet:$PYTHONPATH
+
+(5) RUN EXAMPLES
+  - Download and extract the MNIST dataset from http://www.cs.toronto.edu/~nitish/deepnet/mnist.tar.gz
+    This dataset consists of labelled images of handwritten digits as numpy files.
+  - cd to the deepnet/examples dir
+  - run
+    $ python setup_examples.py <path to mnist dataset> <output path>
+    This will modify the example models and trainers to use the specified paths.
+  - There are examples of different deep learning models. Go to any one and
+    execute runall.sh. For example, cd to deepnet/examples/rbm and execute
+    $ ./runall.sh
+    This should start training an RBM model.
+  
+DeepNet has been tested on Ubuntu 12.04 using CUDA 4.2 on a variety of NVIDIA
+GPUs (GTX-280, GTX-580, GTX-690, M2090, K-20x).
+
+If you have trouble installing/running DeepNet, please create a relevant post on GitHub.
+
