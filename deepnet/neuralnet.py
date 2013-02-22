@@ -82,6 +82,9 @@ class NeuralNet(object):
       print layer.name
       layer.PrintNeighbours()
 
+  def DeepCopy(self):
+    return CopyModel(self.net)
+
   def LoadModelOnGPU(self, batchsize=-1):
     """Load the model on the GPU."""
     if batchsize < 0:
@@ -454,7 +457,7 @@ class NeuralNet(object):
 
     if select_model_using_error:
       best_error = float('Inf')
-      best_net = CopyModel(self.net)
+      best_net = self.DeepCopy()
 
     dump_best = False
     while not stop:
@@ -485,7 +488,7 @@ class NeuralNet(object):
             dump_best = True
             self.CopyModelToCPU()
             self.t_op.current_step = step
-            best_net = CopyModel(self.net)
+            best_net = self.DeepCopy()
             best_t_op = CopyOperation(self.t_op)
         # Evaluate on test set.
         self.Evaluate(validation=False, collect_predictions=collect_predictions)

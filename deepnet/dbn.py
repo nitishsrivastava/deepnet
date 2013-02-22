@@ -17,6 +17,9 @@ class DBN(DBM):
   def CopyModelToCPU(self):
     self.rbm.CopyModelToCPU()
 
+  def DeepCopy(self):
+    return CopyModel(self.rbm.net)
+
   def Show(self):
     """Visualize the state of the layers and edges in the network."""
     self.rbm.Show()
