@@ -14,8 +14,8 @@ class DBN(DBM):
     self.e_op = self.rbm.e_op
     self.verbose = self.rbm.verbose
 
-  def Save(self):
-    self.rbm.Save()
+  def CopyModelToCPU(self):
+    self.rbm.CopyModelToCPU()
 
   def Show(self):
     """Visualize the state of the layers and edges in the network."""
