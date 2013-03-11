@@ -37,10 +37,13 @@ layer {
   is_input: true
   loss_function: SQUARED_LOSS
   hyperparams {
+    sparsity: false
     dropout: false
+    apply_l2_decay: false
     activation: REPLICATED_SOFTMAX
-    normalize: true
-    normalize_to: 1.0
+    sample_input: true
+    adaptive_prior: 100
+    normalize_error: true
   }
   data_field {
     train: "text_unlabelled"
@@ -178,27 +181,8 @@ edge {
     pretrained_model: "text_rbm1_LAST"
     transpose_pretrained: true
   }
-  up_factor: 1.0
-  down_factor: 20.0
 }
 hyperparams {
-  base_epsilon: 0.01
-  epsilon_decay: NONE
-  epsilon_decay_half_life: 5000
-  initial_momentum: 0.0
-  final_momentum: 0.0
-  momentum_change_steps: 10000
-  sparsity: false
-  sparsity_target: 0.1
-  sparsity_cost: 0.001
-  sparsity_damping: 0.9
-  dropout: false
-  dropout_prob: 0.0
-  apply_l2_decay: true
-  l2_decay: 0.0001
   activation: LOGISTIC
-  mf_steps: 1
-  gibbs_steps: 1
-  enable_display: false
 }
 prefix: "/ais/gobi3/u/nitish/flickr/dbn_models"
