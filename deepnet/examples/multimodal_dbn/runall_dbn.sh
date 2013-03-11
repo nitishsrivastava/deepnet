@@ -45,7 +45,7 @@ then
     ${prefix}/flickr_stats.npz image_unlabelled || exit 1
 fi
 # IMAGE LAYER - 1.
-(
+#(
 if ${clobber} || [ ! -e ${model_output_dir}/image_rbm1_LAST ]; then
   echo "Training first layer image RBM."
   python ${trainer} models/image_rbm1.pbtxt \
@@ -78,8 +78,8 @@ if ${clobber} || [ ! -e ${data_output_dir}/image_rbm2_LAST_nnz/data.pbtxt ]; the
     ${data_output_dir}/image_rbm2_LAST_nnz ${gpu_mem} ${main_mem} \
     ${data_output_dir}/image_rbm1_LAST_nnz/data.pbtxt || exit 1
 fi
-)&
-(
+#)&
+#(
 # TEXT LAYER - 1.
 if ${clobber} || [ ! -e ${model_output_dir}/text_rbm1_LAST ]; then
   echo "Training first layer text RBM."
@@ -99,8 +99,8 @@ if ${clobber} || [ ! -e ${model_output_dir}/text_rbm2_LAST ]; then
     trainers/dbn/train_CD_text_layer2.pbtxt text_hidden2 \
     ${data_output_dir}/text_rbm2_LAST ${gpu_mem} ${cpu_mem} || exit 1
 fi
-)&
-wait;
+#)&
+#wait;
 
 # MERGE IMAGE AND TEXT DATA PBTXT FOR TRAINING JOINT RBM
 if ${clobber} || [ ! -e ${data_output_dir}/joint_rbm_LAST/input_data.pbtxt ]; then
