@@ -8,7 +8,7 @@ def SampleText(model_file, op_file, base_output_dir, data_proto, gpu_mem, main_m
   datasets = ['validation']
   layernames = ['joint_hidden', 'text_hidden2', 'text_hidden1', 'text_input_layer']
   layernames_to_unclamp = ['text_input_layer', 'text_hidden2']
-  method = 'gibbs'
+  method = 'mf'  # 'gibbs'
   steps = 10
 
   inference.DoInference(model_file, op_file, base_output_dir, layernames,
