@@ -7,6 +7,7 @@ import os.path
 import util
 import visualize
 import pdb
+#import lightspeed
 
 from cudamat_conv import cudamat_conv2 as cc
 
@@ -38,11 +39,13 @@ class Layer(object):
     self.tied_to = None
     self.data = None
     self.deriv = None
+    self.prefix = proto.prefix
     self.LoadParams(proto)
     self.marker = 0
     self.fig = visualize.GetFigId()
     self.tiny = 1e-10
     self.replicated_neighbour = None
+    self.is_initialized = False
     if batchsize > 0:
       self.AllocateMemory(batchsize)
 
@@ -95,13 +98,15 @@ class Layer(object):
       mat = None
       for pretrained_model in param.pretrained_model:
         if os.path.splitext(pretrained_model)[1] == '.npz':
-          npzfile = np.load(pretrained_model)
+          model_file = os.path.join(self.prefix, pretrained_model)
+          npzfile = np.load(model_file)
           if param.name == 'bias':
             this_mat = np.nan_to_num(npzfile['mean'] / npzfile['std'])
           elif param.name == 'precision':
             this_mat = np.nan_to_num(1. / npzfile['std'])
         else:
-          model = util.ReadModel(pretrained_model)
+          model_file = os.path.join(self.prefix, pretrained_model)
+          model = util.ReadModel(model_file)
           # Find the relevant node in the model.
           node = next(n for n in model.layer if n.name == node_name)
           # Find the relevant parameter in the node.
@@ -192,8 +197,11 @@ class Layer(object):
       self.deriv.free_device_memory()
     dimensions = self.dimensions
     numlabels = self.numlabels
-    if self.is_input or self.is_output:
-      self.data = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
+    if self.is_input or self.is_initialized or self.is_output:
+      if self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+        self.data = cm.CUDAMatrix(np.zeros((numlabels * dimensions, batchsize)))
+      else:
+        self.data = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
     self.deriv = cm.CUDAMatrix(np.zeros((numlabels * dimensions, batchsize)))
     self.state = cm.CUDAMatrix(np.zeros((numlabels * dimensions, batchsize)))
     self.temp = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
@@ -247,65 +255,44 @@ class Layer(object):
         sample.div_by_col(self.params['precision'])
         sample.add(state)
     elif self.activation == deepnet_pb2.Hyperparams.SOFTMAX:
-      state.perturb(target=sample)
+      state.perturb_prob_for_softmax_sampling(target=sample)
       sample.choose_max(axis=0)
     elif self.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
-      if self.proto.hyperparams.adaptive_prior > 0:
-        sample.assign(0)
-        temp_sample = self.expanded_batch
-        numsamples = int(self.proto.hyperparams.adaptive_prior)
-        for i in range(numsamples):
-          state.perturb(target=temp_sample)
-          temp_sample.choose_max_and_accumulate(sample)
+      use_lightspeed = False
+      if use_lightspeed:  # Do sampling on cpu.
+        temp = self.expanded_batch
+        state.sum(axis=0, target=self.temp)
+        state.div_by_row(self.temp, target=temp)
+        probs_cpu = temp.asarray().astype(np.float64)
+        numsamples = self.NN.asarray()
+        samples_cpu = lightspeed.SampleSoftmax(probs_cpu, numsamples)
+        sample.overwrite(samples_cpu.astype(np.float32))
       else:
-        """
-        exact = False
-        sample.assign(0)
-        temp_sample = self.expanded_batch
-        if exact:
-          numsamples = int(self.NN.asarray().max())
-        else:  # ~ 5-7x faster than exact, almost as good.
-          numsamples = int(self.NN.asarray().mean())
-        counter = self.counter
-        count_filter = self.count_filter
-        counter.assign(self.NN)
-        for i in range(numsamples):
-          temp_sample.fill_with_rand()
-          cm.log(temp_sample)
-          temp_sample.mult(-1)
-          state.divide(temp_sample, target=temp_sample)
-          temp_sample.max(axis=0, target=self.temp)
-          temp_sample.add_row_mult(self.temp, -1)
-          temp_sample.less_than(0)
-          temp_sample.mult(-1)
-          temp_sample.add(1)
-          counter.greater_than(0, target=count_filter)
-          temp_sample.mult_by_row(count_filter)
-          sample.add(temp_sample)
-          counter.subtract(1)
-        if not exact:
-          sample.sum(axis=0, target=self.temp)
-          self.temp.add(self.tiny)
-          self.NN.divide(self.temp, target=self.temp)
-          sample.mult_by_row(self.temp)
-        """
-        NN = self.NN.asarray().reshape(-1)
-        numdims, batchsize = self.state.shape
-        max_samples = self.big_sample_matrix.shape[1]
-        for i in range(batchsize):
-          nn = NN[i]
-          factor = 1
-          if nn > max_samples:
-            nn = max_samples
-            factor = float(nn) / max_samples
-          samples = self.big_sample_matrix.slice(0, nn)
-          samples.assign(0)
-          samples.add_col_vec(self.state.slice(i, i+1))
-          samples.perturb()
-          samples.choose_max(axis=0)
-          if factor > 1:
-            samples.mult(factor)
-          samples.sum(axis=1, target=sample.slice(i, i+1))
+        if self.proto.hyperparams.adaptive_prior > 0:
+          sample.assign(0)
+          temp_sample = self.expanded_batch
+          numsamples = int(self.proto.hyperparams.adaptive_prior)
+          for i in range(numsamples):
+            state.perturb_prob_for_softmax_sampling(target=temp_sample)
+            temp_sample.choose_max_and_accumulate(sample)
+        else:
+          NN = self.NN.asarray().reshape(-1)
+          numdims, batchsize = self.state.shape
+          max_samples = self.big_sample_matrix.shape[1]
+          for i in range(batchsize):
+            nn = NN[i]
+            factor = 1
+            if nn > max_samples:
+              nn = max_samples
+              factor = float(nn) / max_samples
+            samples = self.big_sample_matrix.slice(0, nn)
+            samples.assign(0)
+            samples.add_col_vec(self.state.slice(i, i+1))
+            samples.perturb_prob_for_softmax_sampling()
+            samples.choose_max(axis=0)
+            samples.sum(axis=1, target=sample.slice(i, i+1))
+            if factor > 1:
+              sample.slice(i, i+1).mult(factor)
     else:
       raise Exception('Unknown activation')
 
@@ -443,7 +430,7 @@ class Layer(object):
     logging.debug('ComputeUp in %s', self.name)
     self.dirty = False
     perf = None
-    if self.is_input:
+    if self.is_input or self.is_initialized:
       self.GetData()
     else:
       for i, edge in enumerate(self.incoming_edge):
@@ -633,10 +620,6 @@ class Layer(object):
     padding = conv.padding
     num_filters = conv.num_filters
     num_colors = conv.num_colors
-
-    assert f == num_filters, 'f is %d but num_filters is %d' % (f, num_filters)
-    if edge.conv:
-      assert numdims == size**2 * num_colors
 
     input_t = edge.input_t
     numImages, numdims = input_t.shape

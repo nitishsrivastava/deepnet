@@ -145,11 +145,11 @@ class DBM(NeuralNet):
             and self.t_op.optimizer == deepnet_pb2.Operation.CD):
           losses.append(node.GetLoss())
         if node.is_input:
-            if node.sample_input and node.hyperparams.sample_input_after <= step:
-              node.Sample()
-            else:
-              # Not sampling inputs usually makes learning faster.
-              node.sample.assign(node.state)
+          if node.sample_input and node.hyperparams.sample_input_after <= step:
+            node.Sample()
+          else:
+            # Not sampling inputs usually makes learning faster.
+            node.sample.assign(node.state)
         else:
           node.Sample()
     # End of Gibbs Sampling.

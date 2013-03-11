@@ -7,6 +7,7 @@ import visualize
 import logging
 import util
 import pdb
+import os
 
 class Edge(object):
   def __init__(self, proto, node1, node2):
@@ -20,6 +21,7 @@ class Edge(object):
     self.conv = False
     self.local = False
     self.name = '%s:%s' % (self.node1.name, self.node2.name)
+    self.prefix = proto.prefix
     if proto.directed:
       node1.AddOutgoingEdge(self)
       node2.AddIncomingEdge(self)
@@ -99,7 +101,8 @@ class Edge(object):
         node2_name = temp
       mat = None
       for pretrained_model in param.pretrained_model:
-        model = util.ReadModel(pretrained_model)
+        model_file = os.path.join(self.prefix, pretrained_model)
+        model = util.ReadModel(model_file)
         edge = next(e for e in model.edge if e.node1 == node1_name and e.node2 == node2_name)
         pretrained_param = next(p for p in edge.param if p.name == param.name)
         assert pretrained_param.mat != '',\
@@ -304,7 +307,6 @@ class Edge(object):
                   node2.numlabels * node2.dimensions]
         param.dimensions.extend(dims)
       if param.mat:  # and 'grad' not in param.name:
-        print 'Loading saved parameters'
         mat = util.ParameterAsNumpy(param)
       else:
         mat = self.InitializeParameter(param)

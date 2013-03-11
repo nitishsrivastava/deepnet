@@ -33,6 +33,7 @@ message Layer {
   optional deepnet.Metrics performance_stats = 12;
   repeated int32 shape = 13;
   optional bool is_initialized = 14 [default=false];
+  optional string prefix = 15;
 }
 
 message Parameter {
@@ -153,6 +154,8 @@ message Hyperparams {
   optional bool normalize_error = 53 [default=false];
   
   optional int32 start_step_up_cd_after = 54 [default=0];
+  optional bool select_model_using_acc = 55 [default=false];
+  optional bool select_model_using_map = 56 [default=false];
 }
 
 message Edge {
@@ -166,6 +169,7 @@ message Edge {
   optional int32 display_cols = 8 [default=1];
   optional float up_factor = 9 [default=1];
   optional float down_factor = 10 [default=1];
+  optional string prefix = 11;
 }
 
 message Model {
@@ -190,6 +194,12 @@ message Model {
   repeated string positive_phase_order = 10;
   repeated string negative_phase_order = 11;
   optional string initializer_net = 12;
+  optional string prefix = 13;
+
+  // Eary Stopping results.
+  optional Metrics best_valid_stat = 14;  // best validation stat
+  optional Metrics train_stat_es = 15;  // train stat at best validation
+  optional Metrics test_stat_es = 16;  // test stat at best validation
 }
 
 message Operation {
@@ -217,6 +227,8 @@ message Operation {
   optional int32 show_after = 15 [default=0];
   optional bool verbose = 16 [default=false];
   optional bool get_last_piece = 17 [default=false];
+  optional string data_proto_prefix = 18;
+  optional string checkpoint_prefix = 19;
 }
 
 message Metrics {
@@ -254,4 +266,5 @@ message Dataset {
   optional string gpu_memory = 3 [default="2G"];
   optional string main_memory = 4 [default="4G"];
   optional string data_handler = 5 [default="deepnet"];
+  optional string prefix = 6 [default=""];
 }

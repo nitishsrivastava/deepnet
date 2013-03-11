@@ -98,6 +98,8 @@ class NeuralNet(object):
       hyp.CopyFrom(self.net.hyperparams)
       hyp.MergeFrom(layer.hyperparams)
       layer.hyperparams.MergeFrom(hyp)
+      if not layer.prefix:
+        layer.prefix = self.net.prefix
       self.layer.append(self.LayerClass(layer, batchsize))
 
     for edge in self.net.edge:
@@ -107,6 +109,8 @@ class NeuralNet(object):
       edge.hyperparams.MergeFrom(hyp)
       node1 = next(layer for layer in self.layer if layer.name == edge.node1)
       node2 = next(layer for layer in self.layer if layer.name == edge.node2)
+      if not edge.prefix:
+        edge.prefix = self.net.prefix
       self.edge.append(self.EdgeClass(edge, node1, node2))
 
     self.input_datalayer = [node for node in self.layer if node.is_input]
@@ -371,7 +375,7 @@ class NeuralNet(object):
   def GetTestBatch(self):
     self.GetBatch(self.test_data_handler)
 
-  def SetUpData(self, skip_outputs=False):
+  def SetUpData(self, skip_outputs=False, skip_layernames=[]):
     """Setup the data."""
     hyp_list = []
     name_list = [[], [], []]
@@ -379,6 +383,8 @@ class NeuralNet(object):
       if not (node.is_input or node.is_output):
         continue
       if skip_outputs and node.is_output:
+        continue
+      if node.name in skip_layernames:
         continue
       data_field = node.proto.data_field
       if data_field.tied:
@@ -448,15 +454,18 @@ class NeuralNet(object):
 
     collect_predictions = False
     try:
-      p = self.output_datalayer[0].proto.performance_statS
+      p = self.output_datalayer[0].proto.performance_stats
       if p.compute_MAP or p.compute_prec50:
         collect_predictions = True
     except Exception as e:
       pass
     select_model_using_error = self.net.hyperparams.select_model_using_error
-
-    if select_model_using_error:
-      best_error = float('Inf')
+    select_model_using_acc = self.net.hyperparams.select_model_using_acc
+    select_model_using_map = self.net.hyperparams.select_model_using_map
+    select_best = select_model_using_error or select_model_using_acc or select_model_using_map
+    if select_best:
+      best_valid_error = float('Inf')
+      test_error = float('Inf')
       best_net = self.DeepCopy()
 
     dump_best = False
@@ -480,28 +489,47 @@ class NeuralNet(object):
         stats = []
         # Evaluate on validation set.
         self.Evaluate(validation=True, collect_predictions=collect_predictions)
-        if select_model_using_error:
-          stat = self.net.validation_stats[-1]
-          error = stat.error / stat.count
-          if error < best_error:
-            best_error = error
+        # Evaluate on test set.
+        self.Evaluate(validation=False, collect_predictions=collect_predictions)
+        if select_best:
+          valid_stat = self.net.validation_stats[-1]
+          test_stat = self.net.test_stats[-1]
+          if select_model_using_error:
+            valid_error = valid_stat.error / valid_stat.count
+            _test_error = test_stat.error / test_stat.count
+          elif select_model_using_acc:
+            valid_error = 1 - float(valid_stat.correct_preds) / valid_stat.count
+            _test_error = 1 - float(test_stat.correct_preds) / test_stat.count
+          elif select_model_using_map:
+            valid_error = 1 - valid_stat.MAP
+            _test_error = 1 - test_stat.MAP
+          if valid_error < best_valid_error:
+            best_valid_error = valid_error
+            test_error = _test_error
             dump_best = True
             self.CopyModelToCPU()
             self.t_op.current_step = step
+            self.net.best_valid_stat.CopyFrom(valid_stat)
+            self.net.train_stat_es.CopyFrom(self.net.train_stats[-1])
+            self.net.test_stat_es.CopyFrom(test_stat)
             best_net = self.DeepCopy()
             best_t_op = CopyOperation(self.t_op)
-        # Evaluate on test set.
-        self.Evaluate(validation=False, collect_predictions=collect_predictions)
         sys.stdout.write('\n')
-        if self.ShowNow(step):
-          self.Show()
+      if self.ShowNow(step):
+        self.Show()
       if self.SaveNow(step):
         self.t_op.current_step = step
         self.CopyModelToCPU()
         util.WriteCheckpointFile(self.net, self.t_op)
         if dump_best:
           dump_best = False
-          print 'Best error : %.4f' % best_error
+          if select_model_using_error:
+            print 'Best valid error : %.4f Test error %.4f' % (best_valid_error, test_error)
+          elif select_model_using_acc:
+            print 'Best valid acc : %.4f Test acc %.4f' % (1-best_valid_error, 1-test_error)
+          elif select_model_using_map:
+            print 'Best valid MAP : %.4f Test MAP %.4f' % (1-best_valid_error, 1-test_error)
+
           util.WriteCheckpointFile(best_net, best_t_op, best=True)
 
       stop = self.TrainStopCondition(step)

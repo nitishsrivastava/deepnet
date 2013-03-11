@@ -13,6 +13,7 @@ class DBN(DBM):
     self.t_op = self.rbm.t_op
     self.e_op = self.rbm.e_op
     self.verbose = self.rbm.verbose
+    self.batchsize = self.t_op.batchsize
 
   def CopyModelToCPU(self):
     self.rbm.CopyModelToCPU()
@@ -158,7 +159,9 @@ class DBN(DBM):
     self.rbm.LoadModelOnGPU(*args, **kwargs)
     self.upward_net.LoadModelOnGPU(*args, **kwargs)
     self.downward_net.LoadModelOnGPU(*args, **kwargs)
+    self.TieUpNets()
 
+  def TieUpNets(self):
     # Tie up nets.
     for layer_name in self.junction_layers:
       rbm_layer = next(l for l in self.rbm.layer if l.name == layer_name)
@@ -167,20 +170,28 @@ class DBN(DBM):
       rbm_layer.data = up_layer.state
       down_layer.data = rbm_layer.state
 
-  def SetUpData(self):
-    self.upward_net.SetUpData()
+  def ResetBatchsize(self, batchsize):
+    self.batchsize = batchsize
+    self.rbm.ResetBatchsize(batchsize)
+    self.upward_net.ResetBatchsize(batchsize)
+    self.downward_net.ResetBatchsize(batchsize)
+    self.TieUpNets()
+
+  def SetUpData(self, *args, **kwargs):
+    self.upward_net.SetUpData(*args, **kwargs)
     self.train_data_handler = self.upward_net.train_data_handler
     self.validation_data_handler = self.upward_net.validation_data_handler
     self.test_data_handler = self.upward_net.test_data_handler
 
-  def GetTrainBatch(self):
-    self.upward_net.GetTrainBatch()
-
-  def GetValidationBatch(self):
-    self.upward_net.GetValidationBatch()
-
-  def GetTestBatch(self):
-    self.upward_net.GetTestBatch()
+  def GetBatch(self, handler=None):
+    if handler:
+      data_list = handler.Get()
+      if data_list[0].shape[1] != self.batchsize:
+        self.ResetBatchsize(data_list[0].shape[1])
+      for i, layer in enumerate(self.upward_net.datalayer):
+        layer.SetData(data_list[i])
+    for layer in self.upward_net.tied_datalayer:
+      layer.SetData(layer.tied_to.data)
 
   def TrainOneBatch(self, step):
     self.upward_net.ForwardPropagate(train=True, step=step)
@@ -260,8 +271,8 @@ class DBN(DBM):
       output = [l.state.asarray().T for l in layers_to_infer]
       dw.Submit(output)
     sys.stdout.write('\n')
-    dw.Commit()
-    return size
+    size = dw.Commit()
+    return size[0]
 
   def GetLayerByName(self, layername, down=False):
     layer = self.rbm.GetLayerByName(layername)

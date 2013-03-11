@@ -452,14 +452,19 @@ def GetDataHandles(op, names, hyp_list, verbose=False):
     A list of DataHandler objects.
   """
   typesize = 4
-  dataset_proto = util.ReadData(op.data_proto)
+  data_proto_file = os.path.join(op.data_proto_prefix, op.data_proto)
+  dataset_proto = util.ReadData(data_proto_file)
   handlers = []
   if dataset_proto.data_handler == 'deepnet':
     size_list = []
     for name_list in names:
       size = 0
       for name in name_list:
-        data_proto = next(d for d in dataset_proto.data if d.name == name)
+        try:
+          data_proto = next(d for d in dataset_proto.data if d.name == name)
+        except StopIteration as e:
+          print '%s not found in data pbtxt' % name
+          raise e
         datasetsize = data_proto.size
         numdims = np.prod(np.array(data_proto.dimensions))
         size += datasetsize * numdims * typesize
@@ -510,13 +515,15 @@ class DataHandler(object):
       op = util.ReadOperation(op)
     self.verbose = op.verbose
     verbose = self.verbose
-    dataset_proto = util.ReadData(op.data_proto)
+    data_proto_file = os.path.join(op.data_proto_prefix, op.data_proto)
+    dataset_proto = util.ReadData(data_proto_file)
     seq = False
     is_train = False
     for name, hyp in zip(data_name_list, hyperparameter_list):
       data_proto = next(d for d in dataset_proto.data if d.name == name)
-      filenames.append(sorted(glob.glob(data_proto.file_pattern)))
-      stats_files.append(data_proto.stats_file)
+      file_pattern = os.path.join(dataset_proto.prefix, data_proto.file_pattern)
+      filenames.append(sorted(glob.glob(file_pattern)))
+      stats_files.append(os.path.join(dataset_proto.prefix, data_proto.stats_file))
       numdims = np.prod(np.array(data_proto.dimensions))
       if not data_proto.sparse:
         numdims *= data_proto.num_labels
@@ -677,16 +684,23 @@ class DataWriter(object):
     buf = self.buffers[i]
     buf_index = self.buffer_index[i]
     datasize = data.shape[0]
-    if datasize + buf_index <= buf.shape[0]:
-      buf[buf_index:buf_index + datasize] = data
-      self.buffer_index[i] += datasize
+    assert datasize + buf_index <= buf.shape[0], 'Not enough space in buffer.'
+    buf[buf_index:buf_index + datasize] = data
+    self.buffer_index[i] += datasize
+
+  def FreeSpace(self, i):
+    """Return amount of free space left."""
+    return self.buffers[i].shape[0] - self.buffer_index[i]
 
   def HasSpace(self, i, datasize):
     """Return True if buffer i has space to add datasize more vectors."""
     buf = self.buffers[i]
     buf_index = self.buffer_index[i]
-    return buf.shape[0] >= buf_index + datasize
+    return buf.shape[0] > buf_index + datasize
   
+  def IsFull(self, i):
+    return not self.HasSpace(i, 0)
+
   def DumpBuffer(self, i):
     """Write the contents of buffer i to disk."""
     buf_index = self.buffer_index[i]
@@ -701,13 +715,22 @@ class DataWriter(object):
     self.buffer_index[i] = 0
     self.data_written[i] += buf_index
 
+  def SubmitOne(self, i, d):
+    datasize = d.shape[0]
+    free_space = self.FreeSpace(i)
+    if datasize > free_space:
+      self.AddToBuffer(i, d[:free_space])
+    else:
+      self.AddToBuffer(i, d)
+    if self.IsFull(i):
+      self.DumpBuffer(i)
+    if datasize > free_space:
+      self.SubmitOne(i, d[free_space:])
+
   def Submit(self, data):
     assert len(data) == self.data_len
     for i, d in enumerate(data):
-      datasize = d.shape[0]
-      if not self.HasSpace(i, datasize):
-        self.DumpBuffer(i)
-      self.AddToBuffer(i, d)
+      self.SubmitOne(i, d)
 
   def Commit(self):
     for i in range(self.data_len):

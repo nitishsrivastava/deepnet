@@ -22,7 +22,9 @@ def NumpyAsParameter(numpy_array):
 
 def WriteCheckpointFile(net, t_op, best=False):
   """Writes out the model to disk."""
-  ckpt_dir = t_op.checkpoint_directory
+  ckpt_dir = os.path.join(t_op.checkpoint_prefix, t_op.checkpoint_directory)
+  if not os.path.isdir(ckpt_dir):
+    os.makedirs(ckpt_dir)
   if best:
     tag = 'BEST'
     checkpoint_file = '%s_%s' % (net.name, tag)
@@ -89,6 +91,16 @@ def ReadData(proto_file):
     proto.ParseFromString(f.read())
     f.close()
   return proto
+
+def CopyData(data):
+  copy = deepnet_pb2.Dataset.Data()
+  copy.CopyFrom(data)
+  return copy
+
+def CopyDataset(data):
+  copy = deepnet_pb2.Dataset()
+  copy.CopyFrom(data)
+  return copy
 
 def CopyOperation(op):
   copy = deepnet_pb2.Operation()

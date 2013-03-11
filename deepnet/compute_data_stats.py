@@ -16,7 +16,9 @@ class DataViewer(object):
     except StopIteration as e:
       print 'No data called %s found in proto file.' % name
       raise e
-    filenames = sorted(glob.glob(this_set.file_pattern))
+
+    filenames = sorted(glob.glob(os.path.join(data_proto.prefix,
+                                              this_set.file_pattern)))
     numdims = np.prod(np.array(this_set.dimensions))
     key = this_set.key
     self.numdims = numdims
