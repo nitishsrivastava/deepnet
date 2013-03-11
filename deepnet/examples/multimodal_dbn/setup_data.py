@@ -149,6 +149,14 @@ def main():
   data_pbtxt_file_nnz = os.path.join(data_dir, 'flickr_nnz.pbtxt')
   if not os.path.exists(data_pbtxt_file_z):
     CreateMissingTextData(data_pb, data_pbtxt_file_z, data_pbtxt_file_nnz)
+  data_pb = util.ReadData(data_pbtxt_file_z)
+  EditPaths(data_pb, data_dir, gpu_mem, main_mem)
+  with open(data_pbtxt_file_z, 'w') as f:
+    text_format.PrintMessage(data_pb, f)
+  data_pb = util.ReadData(data_pbtxt_file_nnz)
+  EditPaths(data_pb, data_dir, gpu_mem, main_mem)
+  with open(data_pbtxt_file_nnz, 'w') as f:
+    text_format.PrintMessage(data_pb, f)
 
 
 if __name__ == '__main__':
