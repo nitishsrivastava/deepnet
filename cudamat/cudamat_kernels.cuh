@@ -33,7 +33,8 @@ __global__ void kSampleBernoulli(unsigned int* randMults, unsigned long long* ra
 __global__ void kSampleBernoulliTanh(unsigned int* randMults, unsigned long long* randWords, float* gData, float* target, unsigned int numElements);
 __global__ void kSamplePoisson(unsigned int* randMults, unsigned long long* randWords, float* gData, float* target, unsigned int numElements);
 __global__ void kSampleGaussian(unsigned int* randMults, unsigned long long* randWords, float* gData, float* target, unsigned int numElements, float mult);
-__global__ void kPerturb(unsigned int* randMults, unsigned long long* randWords, float* gData, float* target, unsigned int numElements);
+__global__ void kPerturbProb(unsigned int* randMults, unsigned long long* randWords, float* gData, float* target, unsigned int numElements);
+__global__ void kPerturbEnergy(unsigned int* randMults, unsigned long long* randWords, float* gData, float* target, unsigned int numElements);
 
 __global__ void kGetRowSlice(float* source, float* target, int start, int end, int width, int height);
 __global__ void kTranspose(float *odata, float *idata, int width, int height);

@@ -206,15 +206,6 @@ class CUDAMatrix(object):
         self.__free_device_memory = _cudamat.free_device_memory
 
 
-    def __del__(self):
-        try:
-            if 'p_mat' in self.__dict__:
-                err_code = self.__free_device_memory(self.p_mat)
-                if err_code:
-                    raise generate_exception(err_code)
-        except Exception:
-            pass
-
     @staticmethod
     def init_random(seed = 0):
         """
@@ -521,13 +512,25 @@ class CUDAMatrix(object):
 
         return self
 
-    def perturb(self, target=None):
+    def perturb_energy_for_softmax_sampling(self, target=None):
+        """
+        Add by -log(-log(rand)).
+        """
+        if not target:
+          target = self
+        err_code = _cudamat.perturb_energy(CUDAMatrix.rnd_state_p, self.p_mat, target.p_mat)
+        if err_code:
+            raise generate_exception(err_code)
+
+        return self
+
+    def perturb_prob_for_softmax_sampling(self, target=None):
         """
         Divide by -log(rand).
         """
         if not target:
           target = self
-        err_code = _cudamat.perturb(CUDAMatrix.rnd_state_p, self.p_mat, target.p_mat)
+        err_code = _cudamat.perturb_prob(CUDAMatrix.rnd_state_p, self.p_mat, target.p_mat)
         if err_code:
             raise generate_exception(err_code)
 

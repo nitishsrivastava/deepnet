@@ -463,7 +463,7 @@ extern int sample_gaussian(rnd_struct* rnd_state, cudamat* mat, cudamat* target,
         return 0;
 }
 
-extern int perturb(rnd_struct* rnd_state, cudamat* mat, cudamat* target) {
+extern int perturb_energy(rnd_struct* rnd_state, cudamat* mat, cudamat* target) {
     int len = mat->size[0] * mat->size[1];
     if (mat->size[0] != target->size[0] || mat->size[1] != target->size[1])
         return ERROR_INCOMPATIBLE_DIMENSIONS;
@@ -471,7 +471,25 @@ extern int perturb(rnd_struct* rnd_state, cudamat* mat, cudamat* target) {
     if (!mat->on_device)
         return ERROR_NOT_ON_DEVICE;
 
-    kPerturb<<<NUM_RND_BLOCKS,NUM_RND_THREADS_PER_BLOCK>>>(rnd_state->dev_mults, rnd_state->dev_words, mat->data_device, target->data_device, len);
+    kPerturbEnergy<<<NUM_RND_BLOCKS,NUM_RND_THREADS_PER_BLOCK>>>(rnd_state->dev_mults, rnd_state->dev_words, mat->data_device, target->data_device, len);
+
+    cudaThreadSynchronize();
+
+    if (checkCUDAError())
+        return CUDA_ERROR;
+    else
+        return 0;
+}
+
+extern int perturb_prob(rnd_struct* rnd_state, cudamat* mat, cudamat* target) {
+    int len = mat->size[0] * mat->size[1];
+    if (mat->size[0] != target->size[0] || mat->size[1] != target->size[1])
+        return ERROR_INCOMPATIBLE_DIMENSIONS;
+
+    if (!mat->on_device)
+        return ERROR_NOT_ON_DEVICE;
+
+    kPerturbProb<<<NUM_RND_BLOCKS,NUM_RND_THREADS_PER_BLOCK>>>(rnd_state->dev_mults, rnd_state->dev_words, mat->data_device, target->data_device, len);
 
     cudaThreadSynchronize();
 

@@ -119,8 +119,7 @@ __global__ void kSampleGaussian(unsigned int* rndMults, unsigned long long* rndW
     rndWords[idx] = rndWord;
 }
 
-
-__global__ void kPerturb(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
+__global__ void kPerturbEnergy(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned long long rndWord = rndWords[idx];
     const unsigned int rndMult = rndMults[idx];
@@ -129,7 +128,21 @@ __global__ void kPerturb(unsigned int* rndMults, unsigned long long* rndWords, f
     for(unsigned int i = idx; i < numElements; i += NUM_RND_STREAMS) {
         rndWord = rndMult * LOW_BITS(rndWord) + HIGH_BITS(rndWord);
         rnd = (__uint2float_rn(LOW_BITS(rndWord)) + 1.0f) / 4294967296.0f;
-        target[i] = - gData[i] / logf(rnd);
+        target[i] = gData[i] - __logf( - __logf(rnd));
+    }
+    rndWords[idx] = rndWord;
+}
+
+__global__ void kPerturbProb(unsigned int* rndMults, unsigned long long* rndWords, float* gData, float* target, unsigned int numElements) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned long long rndWord = rndWords[idx];
+    const unsigned int rndMult = rndMults[idx];
+    float rnd;
+
+    for(unsigned int i = idx; i < numElements; i += NUM_RND_STREAMS) {
+        rndWord = rndMult * LOW_BITS(rndWord) + HIGH_BITS(rndWord);
+        rnd = (__uint2float_rn(LOW_BITS(rndWord)) + 1.0f) / 4294967296.0f;
+        target[i] = - gData[i] /  __logf(rnd);
     }
     rndWords[idx] = rndWord;
 }
