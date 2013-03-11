@@ -1,0 +1,13 @@
+optimizer: CD
+stopcondition {
+  all_processed: false
+  steps: 100000
+}
+train: true
+batchsize: 128
+data_proto: "flickr_nnz.pbtxt"
+eval_after: 5000
+checkpoint_after: 10000
+checkpoint_directory: "/ais/gobi3/u/nitish/flickr/dbn_models"
+randomize: true
+data_proto_prefix: "/ais/gobi3/u/nitish/flickr"

@@ -1,0 +1,61 @@
+name: "image_hidden1_classifier"
+model_type: FEED_FORWARD_NET
+hyperparams {
+  base_epsilon: 0.01
+  initial_momentum : 0.5
+  final_momentum : 0.9
+  momentum_change_steps : 10000
+  apply_l2_decay: true
+  l2_decay: 0.001
+  select_model_using_map: true
+}
+
+layer {
+  name: "input_layer"
+  dimensions: 2048
+  is_input: true
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  data_field {
+    train: "train_image_hidden1"
+    validation: "valid_image_hidden1"
+    test: "test_image_hidden1"
+  }
+}
+
+layer {
+  name: "output_layer"
+  dimensions: 38
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  hyperparams{
+    activation: LOGISTIC
+    apply_l2_decay: false
+  }
+  is_output: true
+  loss_function: CROSS_ENTROPY
+  data_field {
+    train: "train_labels"
+    validation: "valid_labels"
+    test: "test_labels"
+  }
+  performance_stats {
+    compute_cross_entropy: true
+    compute_MAP: true
+    compute_prec50: true
+  }
+}
+
+edge {
+  node1: "input_layer"
+  node2: "output_layer"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN
+    sigma: 0.01
+  }
+}

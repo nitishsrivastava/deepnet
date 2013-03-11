@@ -1,0 +1,13 @@
+optimizer: CD
+stopcondition {
+  all_processed: false
+  steps: 200000
+}
+train: true
+batchsize: 128
+data_proto: "joint_rbm_LAST/input_data.pbtxt"
+eval_after: 5000
+checkpoint_after: 100000
+checkpoint_directory: "/ais/gobi3/u/nitish/flickr/dbn_models"
+randomize: true
+data_proto_prefix: "/ais/gobi3/u/nitish/flickr/dbn_reps"

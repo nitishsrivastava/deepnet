@@ -1,0 +1,12 @@
+optimizer : GRADIENT_DESCENT
+stopcondition {
+  all_processed: false
+  steps: 10000
+}
+train: true 
+data_proto: "split_1/data.pbtxt"
+eval_after: 500
+checkpoint_after: 10000
+checkpoint_directory: "classifiers/split_1"
+randomize: true
+batchsize: 100
