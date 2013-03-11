@@ -4,8 +4,7 @@ from trainer import *
 def ExtractRepresentations(model_file, train_op_file, layernames,
                            base_output_dir, memory='10G',
                            datasets=['train', 'validation', 'test'],
-                           gpu_mem='2G', main_mem='30G'):
-
+                           gpu_mem='2G', main_mem='30G', data_proto=None):
   if isinstance(model_file, str):
     model = util.ReadModel(model_file)
   else:
@@ -14,8 +13,10 @@ def ExtractRepresentations(model_file, train_op_file, layernames,
     op = ReadOperation(train_op_file)
   else:
     op = train_op_file
+  if data_proto:
+    op.data_proto = data_proto
   op.randomize = False
-  op.verbose = True
+  op.verbose = False
   op.get_last_piece = True
   if not os.path.isdir(base_output_dir):
     os.makedirs(base_output_dir)
@@ -28,6 +29,7 @@ def ExtractRepresentations(model_file, train_op_file, layernames,
   data_pb.name = model.name
   data_pb.gpu_memory = gpu_mem
   data_pb.main_memory = main_mem
+  data_pb.prefix = base_output_dir
   output_proto_file = os.path.join(base_output_dir, 'data.pbtxt')
   for dataset in datasets:
     output_dir = os.path.join(base_output_dir, dataset)
@@ -45,7 +47,7 @@ def ExtractRepresentations(model_file, train_op_file, layernames,
       data = data_pb.data.add()
       data.size = size[i]
       data.name = '%s_%s' % (lname, tag)
-      data.file_pattern = os.path.join(output_dir, '%s-*-of-*.npy' % lname)
+      data.file_pattern = os.path.join(dataset, '%s-*-of-*.npy' % lname)
       data.dimensions.append(layer.state.shape[0])
   with open(output_proto_file, 'w') as f:
     text_format.PrintMessage(data_pb, f)
@@ -61,13 +63,17 @@ def main():
   #datasets = ['test']
   gpu_mem = '2G'
   main_mem = '30G'
+  data_proto = None
   if len(sys.argv) > 5:
     gpu_mem = sys.argv[5]
   if len(sys.argv) > 6:
     main_mem = sys.argv[6]
+  if len(sys.argv) > 7:
+    data_proto = sys.argv[7]
 
   ExtractRepresentations(model_file, train_op_file, [layername], output_dir,
-                         datasets=datasets)
+                         datasets=datasets, gpu_mem=gpu_mem, main_mem=main_mem,
+                         data_proto=data_proto)
   FreeGPU(board)
 
 
