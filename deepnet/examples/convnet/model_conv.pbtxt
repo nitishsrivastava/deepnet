@@ -1,0 +1,180 @@
+name: "mnist_conv"
+model_type: FEED_FORWARD_NET
+seed: 42
+hyperparams {
+  base_epsilon: 0.01
+  initial_momentum : 0.5
+  final_momentum : 0.9
+  momentum_change_steps : 10000
+  apply_l2_decay: true
+  l2_decay: 0.001
+  activation: RECTIFIED_LINEAR
+}
+
+layer {
+  name: "input_layer"
+  dimensions: 784
+  is_input: true
+  shape: 28
+  shape: 28
+  shape: 1
+  hyperparams{
+    activation: LINEAR
+  }
+  data_field {
+    train: "train_data"
+    validation: "validation_data"
+    test: "test_data"
+  }
+}
+
+layer {
+  name: "output_layer"
+  dimensions: 1
+  numlabels: 10
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  hyperparams{
+    dropout: false
+    activation: SOFTMAX
+  }
+  is_output: true
+  loss_function: CROSS_ENTROPY
+  data_field {
+    train: "train_labels"
+    validation: "validation_labels"
+    test: "test_labels"
+  }
+  performance_stats {
+    compute_cross_entropy: true
+    compute_correct_preds: true
+  }
+}
+
+layer {
+  name: "hidden1"
+  dimensions: 10816
+  # nloc = (x_width + 2*padding - size)/stride + 1
+  #  = (28 + 2* 2- 5)/1 + 1 = 28
+  # pooling:
+  # nloc = (nloc + 2*padding - size )/stride + 1
+  # = (28 + 2* 0 - 3)/2 + 1 = 13
+  # dims = num_filters * nloc**2
+  # dims = 64 * 13**2
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  hyperparams {
+    apply_l2_decay: false
+  }
+}
+
+layer {
+  name: "hidden2"
+  dimensions: 2304
+  # nloc = (x_width + 2*padding - size)/stride + 1
+  #  = (13 + 2* 2- 5)/1 + 1 = 13
+  # pooling:
+  # nloc = (nloc + 2*padding - size )/stride + 1
+  # = (13 + 2* 0 - 3)/2 + 1 = 6
+  # dims = num_filters * nloc**2
+  # dims = 64 * 6**2
+
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+  hyperparams {
+    apply_l2_decay: false
+  }
+}
+
+layer {
+  name: "hidden3"
+  dimensions: 1024
+  param {
+    name: "bias"
+    initialization: CONSTANT
+  }
+}
+
+edge {
+  node1: "input_layer"
+  node2: "hidden1"
+  param {
+    name: "weight"
+    conv: true
+    conv_params {
+      size: 5
+      stride: 1
+      padding: 2
+      num_filters: 64
+      num_colors: 1
+      max_pool: true
+      pool_size: 3
+      pool_stride: 2
+    }
+    initialization: DENSE_GAUSSIAN
+    sigma: 0.01
+  }
+  hyperparams {
+    base_epsilon: 0.001
+    initial_momentum : 0.9
+    final_momentum : 0.9
+    momentum_change_steps : 20000
+    apply_l2_decay: false
+  }
+  receptive_field_width : 5
+  display_rows: 8
+  display_cols: 8
+}
+edge {
+  node1: "hidden1"
+  node2: "hidden2"
+  param {
+    name: "weight"
+    conv: true
+    conv_params {
+      size: 5
+      stride: 1
+      padding: 2
+      num_filters: 64
+      num_colors: 64
+      max_pool: true
+      pool_size: 3
+      pool_stride: 2
+    }
+    initialization: DENSE_GAUSSIAN
+    sigma: 0.01
+  }
+  hyperparams {
+    base_epsilon: 0.001
+    initial_momentum : 0.9
+    final_momentum : 0.9
+    momentum_change_steps : 20000
+    apply_l2_decay: false
+  }
+}
+
+edge {
+  node1: "hidden2"
+  node2: "hidden3"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma: 1.0
+  }
+}
+
+edge {
+  node1: "hidden3"
+  node2: "output_layer"
+  param {
+    name: "weight"
+    initialization: DENSE_GAUSSIAN_SQRT_FAN_IN
+    sigma: 1.0
+  }
+}

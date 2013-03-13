@@ -1,0 +1,3 @@
+stopcondition {
+  all_processed: true
+}

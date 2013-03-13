@@ -1,0 +1,13 @@
+optimizer : GRADIENT_DESCENT
+stopcondition {
+  all_processed: false
+  steps: 100000
+}
+train: true 
+batchsize: 100
+data_proto: "/ais/gobi3/u/nitish/mnist/mnist.pbtxt"
+eval_after: 500
+checkpoint_after: 10000
+checkpoint_directory: "/ais/gobi3/u/nitish/mnist/models"
+randomize: true
+verbose: true
