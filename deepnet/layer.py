@@ -244,9 +244,11 @@ class Layer(object):
     elif self.activation == deepnet_pb2.Hyperparams.TANH:
       state.sample_bernoulli_tanh(target=sample)
     elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR:
-      state.sample_poisson(target=sample)
+      state.sample_gaussian(target=sample, mult=1.0)
+      sample.lower_bound(0)
     elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR_SMOOTH:
-      state.sample_poisson(target=sample)
+      state.sample_gaussian(target=sample, mult=1.0)
+      sample.lower_bound(0)
     elif self.activation == deepnet_pb2.Hyperparams.LINEAR:
       #sample.assign(state)
       #state.sample_gaussian(target=sample, mult=0.01)
@@ -303,8 +305,7 @@ class Layer(object):
     elif self.activation == deepnet_pb2.Hyperparams.TANH:
       cm.tanh(state)
     elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR:
-      state.greater_than(0, target=self.temp)
-      state.mult(self.temp)
+      state.lower_bound(0)
     elif self.activation == deepnet_pb2.Hyperparams.RECTIFIED_LINEAR_SMOOTH:
       cm.log_1_plus_exp(state)
     elif self.activation == deepnet_pb2.Hyperparams.LINEAR:
