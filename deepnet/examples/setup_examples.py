@@ -43,7 +43,7 @@ def main():
   data_pbtxt_file = os.path.join(data_path, 'mnist.pbtxt')
   MakeDataPbtxt(data_pbtxt_file, data_path)
 
-  for model in ['ae', 'dbm', 'dbn', 'ff', 'rbm']:
+  for model in ['ae', 'dbm', 'dbn', 'ff', 'rbm', 'convnet']:
     trainer_file = os.path.join(model, 'train.pbtxt')
     MakeTrainers(trainer_file, data_pbtxt_file, output_path)
 
@@ -63,6 +63,7 @@ def main():
     os.path.join('ff', 'model.pbtxt'),
     os.path.join('ff', 'model_dropout.pbtxt'),
     os.path.join('rbm', 'model.pbtxt'),
+    os.path.join('convnet', 'model_conv.pbtxt'),
   ]
   for model_file in model_files:
     MakeModels(model_file, output_path)
