@@ -3,36 +3,20 @@ import gzip
 import logging
 import sys
 import time
+from google.protobuf import text_format
 
 from datahandler import *
+from convolutions import *
 from edge import *
-from google.protobuf import text_format
 from layer import *
 from util import *
-
-def GetPerformanceStats(stat, prefix=''):
-  s = ''
-  if stat.compute_cross_entropy:
-    s += ' %s_CE: %.3f' % (prefix, stat.cross_entropy / stat.count)
-  if stat.compute_correct_preds:
-    s += ' %s_Acc: %.3f (%d/%d)' % (
-      prefix, stat.correct_preds/stat.count, stat.correct_preds, stat.count)
-  if stat.compute_error:
-    s += ' %s_E: %.5f' % (prefix, stat.error / stat.count)
-  if stat.compute_MAP and prefix != 'T':
-    s += ' %s_MAP: %.3f' % (prefix, stat.MAP)
-  if stat.compute_prec50 and prefix != 'T':
-    s += ' %s_prec50: %.3f' % (prefix, stat.prec50)
-  if stat.compute_sparsity:
-    s += ' %s_sp: %.3f' % (prefix, stat.sparsity / stat.count)
-  return s
-
-def Accumulate(acc, perf):
- acc.count += perf.count
- acc.cross_entropy += perf.cross_entropy
- acc.error += perf.error
- acc.correct_preds += perf.correct_preds
- acc.sparsity += perf.sparsity
+from logistic_layer import *
+from tanh_layer import *
+from relu_layer import *
+from smooth_relu_layer import *
+from linear_layer import *
+from softmax_layer import *
+from replicated_softmax_layer import *
 
 class NeuralNet(object):
 
@@ -62,7 +46,6 @@ class NeuralNet(object):
     self.datalayer = []
     self.tied_datalayer = []
     self.unclamped_layer = []
-    self.SetLayerAndEdgeClass()
     self.verbose = False
     self.batchsize = 0
     if self.t_op:
@@ -72,10 +55,6 @@ class NeuralNet(object):
       self.verbose = self.e_op.verbose
       self.batchsize = self.e_op.batchsize
     self.train_stop_steps = sys.maxint
-
-  def SetLayerAndEdgeClass(self):
-    self.LayerClass = Layer
-    self.EdgeClass = Edge
 
   def PrintNetwork(self):
     for layer in self.layer:
@@ -100,7 +79,7 @@ class NeuralNet(object):
       layer.hyperparams.MergeFrom(hyp)
       if not layer.prefix:
         layer.prefix = self.net.prefix
-      self.layer.append(self.LayerClass(layer, batchsize))
+      self.layer.append(CreateLayer(Layer, layer, self.t_op))
 
     for edge in self.net.edge:
       hyp = deepnet_pb2.Hyperparams()
@@ -111,7 +90,10 @@ class NeuralNet(object):
       node2 = next(layer for layer in self.layer if layer.name == edge.node2)
       if not edge.prefix:
         edge.prefix = self.net.prefix
-      self.edge.append(self.EdgeClass(edge, node1, node2))
+      tied_to = None
+      if edge.tied:
+        tied_to = next(e for e in self.edge if e.node1.name == edge.tied_to_node1 and e.node2.name == edge.tied_to_node2)
+      self.edge.append(Edge(edge, node1, node2, self.t_op, tied_to=tied_to))
 
     self.input_datalayer = [node for node in self.layer if node.is_input]
     self.output_datalayer = [node for node in self.layer if node.is_output]
@@ -139,6 +121,191 @@ class NeuralNet(object):
       raise Exception('Invalid net for backprop. Cycle exists.')
     return node_list
 
+  def ComputeUp(self, layer, train=False, step=0, maxsteps=0):
+    """
+    Computes the state of `layer', given the state of its incoming neighbours.
+
+    Args:
+      layer: Layer whose state is to be computed.
+      train: True if this computation is happening during training, False during
+        evaluation.
+      step: Training step.
+      maxsteps: Maximum number of steps that will be taken (Needed because some
+        hyperparameters may depend on this).
+    """
+    layer.dirty = False
+    perf = None
+    if layer.is_input or layer.is_initialized:
+      layer.GetData()
+    else:
+      for i, edge in enumerate(layer.incoming_edge):
+        if edge in layer.outgoing_edge:
+          continue
+        inputs = layer.incoming_neighbour[i].state
+        if edge.conv or edge.local:
+          if i == 0:
+            ConvolveUp(inputs, edge, layer.state)
+          else:
+            AddConvoleUp(inputs, edge, layer.state)
+        else:
+          w = edge.params['weight']
+          factor = edge.proto.up_factor
+          if i == 0:
+            cm.dot(w.T, inputs, target=layer.state)
+            if factor != 1:
+              layer.state.mult(factor)
+          else:
+            layer.state.add_dot(w.T, inputs, mult=factor)
+      b = layer.params['bias']
+      if layer.replicated_neighbour is None:
+        layer.state.add_col_vec(b)
+      else:
+        layer.state.add_dot(b, layer.replicated_neighbour.NN)
+      layer.ApplyActivation()
+      if layer.hyperparams.sparsity:
+        layer.state.sum(axis=1, target=layer.dimsize)
+        perf = deepnet_pb2.Metrics()
+        perf.MergeFrom(layer.proto.performance_stats)
+        perf.count = layer.batchsize
+        layer.dimsize.sum(axis=0, target=layer.unitcell)
+        perf.sparsity = layer.unitcell.euclid_norm() / layer.dimsize.shape[0]
+        layer.unitcell.greater_than(0)
+        if layer.unitcell.euclid_norm() == 0:
+          perf.sparsity *= -1
+
+    if layer.hyperparams.dropout:
+      if train and maxsteps - step >= layer.hyperparams.stop_dropout_for_last:
+        # Randomly set states to zero.
+        if layer.hyperparams.mult_dropout:
+          layer.mask.fill_with_randn()
+          layer.mask.add(1)
+          layer.state.mult(layer.mask)
+        else:
+          layer.mask.fill_with_rand()
+          layer.mask.greater_than(layer.hyperparams.dropout_prob)
+          if layer.hyperparams.blocksize > 1:
+            layer.mask.blockify(layer.hyperparams.blocksize)
+          layer.state.mult(layer.mask)
+      else:
+        # Produce expected output.
+        if layer.hyperparams.mult_dropout:
+          pass
+        else:
+          layer.state.mult(1.0 - layer.hyperparams.dropout_prob)
+    return perf
+
+  def ComputeDown(self, layer, step):
+    """Backpropagate through this layer.
+    Args:
+      step: The training step. Needed because some hyperparameters depend on
+      which training step they are being used in.
+    """
+    if layer.is_input:  # Nobody to backprop to.
+      return
+    # At this point layer.deriv contains the derivative with respect to the
+    # outputs of this layer. Compute derivative with respect to the inputs.
+    if layer.is_output:
+      loss = layer.GetLoss(get_deriv=True)
+    else:
+      loss = None
+      if layer.hyperparams.sparsity:
+        layer.AddSparsityGradient()
+      layer.ComputeDeriv()
+    # Now layer.deriv contains the derivative w.r.t to the inputs.
+    # Send it down each incoming edge and update parameters on the edge.
+    for edge in layer.incoming_edge:
+      if edge.conv or edge.local:
+        AccumulateConvDeriv(edge.node1, edge, layer.deriv)
+      else:
+        self.AccumulateDeriv(edge.node1, edge, layer.deriv)
+      self.UpdateEdgeParams(edge, layer.deriv, step)
+    # Update the parameters on this layer (i.e., the bias).
+    self.UpdateLayerParams(layer, step)
+    return loss
+
+  def AccumulateDeriv(self, layer, edge, deriv):
+    """Accumulate the derivative w.r.t the outputs of this layer.
+
+    A layer needs to compute derivatives w.r.t its outputs. These outputs may
+    have been connected to lots of other nodes through outgoing edges.
+    This method adds up the derivatives contributed by each outgoing edge.
+    It gets derivatives w.r.t the inputs at the other end of its outgoing edge.
+    Args:
+      edge: The edge which is sending the derivative.
+      deriv: The derivative w.r.t the inputs at the other end of this edge.
+    """
+    if layer.is_input:
+      return
+    if layer.dirty:  # If some derivatives have already been received.
+      layer.deriv.add_dot(edge.params['weight'], deriv)
+    else:  # Receiving derivative for the first time.
+      cm.dot(edge.params['weight'], deriv, target=layer.deriv)
+      layer.dirty = True
+
+  def UpdateEdgeParams(self, edge, deriv, step):
+    """ Update the parameters associated with this edge.
+
+    Update the weights and associated parameters.
+    Args:
+      deriv: Gradient w.r.t the inputs at the outgoing end.
+      step: Training step.
+    """
+    numcases = edge.node1.batchsize
+    if edge.conv or edge.local:
+      ConvOuter(edge, edge.temp)
+      edge.gradient.add_mult(edge.temp, alpha=1.0/numcases)
+    else:
+      edge.gradient.add_dot(edge.node1.state, deriv.T, mult=1.0/numcases)
+    if edge.tied_to:
+      edge.tied_to.gradient.add(edge.gradient)
+      edge.gradient.assign(0)
+      edge = edge.tied_to
+    edge.num_grads_received += 1
+    gradient = edge.gradient
+    if edge.num_grads_received == edge.num_shares:
+      h = edge.hyperparams
+      momentum, epsilon = GetMomentumAndEpsilon(edge.hyperparams, step)
+      w_delta = edge.grad_weight
+      w = edge.params['weight']
+      if h.adapt == deepnet_pb2.Hyperparams.NONE:
+        w_delta.mult(momentum)
+        if h.apply_l2_decay:
+          w_delta.add_mult(w, h.l2_decay)
+        if h.apply_l1_decay and step > h.apply_l1decay_after:
+          w.sign(target=edge.temp)
+          w_delta.add_mult(edge.temp, h.l1_decay)
+      else:
+        raise Exception('Not implemented.')
+      w_delta.add(gradient)
+      w.add_mult(w_delta, -epsilon)
+      edge.num_grads_received = 0
+      gradient.assign(0)
+      if h.apply_weight_norm:
+        w.norm_limit(h.weight_norm, axis=0)
+
+  def UpdateLayerParams(self, layer, step):
+    """ Update the parameters associated with this layer.
+
+    Update the bias.
+    Args:
+      step: Training step.
+    """
+    h = layer.hyperparams
+    deriv = layer.deriv
+    momentum, epsilon = GetMomentumAndEpsilon(layer.hyperparams, step)
+    b_delta = layer.grad_bias
+    b = layer.params['bias']
+
+    # Update bias.
+    b_delta.mult(momentum)
+    b_delta.add_sums(deriv, axis=1, mult = 1.0 / layer.batchsize)
+    #if h.apply_l2_decay:
+    #  b_delta.add_mult(b, h.l2_decay)
+    #if h.apply_l1_decay and step > h.apply_l1decay_after:
+    #  b.sign(target=layer.dimsize)
+    #  b_delta.add_mult(layer.dimsize, h.l1_decay)
+    b.add_mult(b_delta, -epsilon)
+
   def ForwardPropagate(self, train=False, step=0):
     """Do a forward pass through the network.
 
@@ -149,7 +316,7 @@ class NeuralNet(object):
     """
     losses = []
     for node in self.node_list:
-      loss = node.ComputeUp(train, step, self.train_stop_steps)
+      loss = self.ComputeUp(node, train, step, self.train_stop_steps)
       if loss:
         losses.append(loss)
     return losses
@@ -162,7 +329,7 @@ class NeuralNet(object):
     """
     losses = []
     for node in reversed(self.node_list):
-      loss = node.ComputeDown(step)
+      loss = self.ComputeDown(node, step)
       if loss:
         losses.append(loss)
     return losses
@@ -364,7 +531,10 @@ class NeuralNet(object):
       for i, layer in enumerate(self.datalayer):
         layer.SetData(data_list[i])
     for layer in self.tied_datalayer:
-      layer.SetData(layer.tied_to.data)
+      data = layer.tied_to.data
+      if data.shape[1] != self.batchsize:
+        self.ResetBatchsize(data.shape[1])
+      layer.SetData(data)
 
   def GetTrainBatch(self):
     self.GetBatch(self.train_data_handler)

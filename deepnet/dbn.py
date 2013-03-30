@@ -241,12 +241,6 @@ class DBN(DBM):
 
     gibbs = method == 'gibbs'
     mf = method == 'mf'
-    if gibbs:
-      for layer in self.rbm.layer:
-        layer.pos_phase = False
-
-    for node in self.rbm.layer:
-      node.TiePhases()
 
     for batch in range(numbatches):
       sys.stdout.write('\r%d' % (batch+1))
@@ -264,7 +258,7 @@ class DBN(DBM):
           node.ResetState(rand=False)
       for i in range(steps):
         for node in self.rbm.pos_phase_order:
-          node.ComputeUp()
+          self.ComputeUp(node, use_samples=gibbs)
           if gibbs:
             node.Sample()
       self.downward_net.ForwardPropagate()

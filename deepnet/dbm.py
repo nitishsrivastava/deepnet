@@ -1,22 +1,29 @@
 """Implements a Deep Boltzmann Machine."""
 from neuralnet import *
-from dbm_layer import *
-from dbm_edge import *
-import logging
 
 class DBM(NeuralNet):
 
   def __init__(self, *args, **kwargs):
     super(DBM, self).__init__(*args, **kwargs)
     self.initializer_net = None
+    self.cd = self.t_op.optimizer == deepnet_pb2.Operation.CD
 
   @staticmethod
   def AreInputs(l):
     return reduce(lambda a, x: x.is_input and a, l, True)
 
-  def SetLayerAndEdgeClass(self):
-    self.LayerClass = DBMLayer
-    self.EdgeClass = DBMEdge
+  def SetPhase(self, layer, pos=True):
+    """Setup required before starting a phase.
+
+    This method makes 'state' and 'sample' point to the right variable depending
+    on the phase.
+    """
+    if pos:
+      layer.state = layer.pos_state
+      layer.sample = layer.pos_sample
+    else:
+      layer.state = layer.neg_state
+      layer.sample = layer.neg_sample
 
   def DumpModelState(self, step):
     state_dict = dict([(node.name, node.state.asarray().T) for node in self.node_list])
@@ -53,17 +60,65 @@ class DBM(NeuralNet):
 
   def ComputeUnnormalizedLogProb(self):
     pass
-    
+
+  def ComputeUp(self, layer, train=False, compute_input=False, step=0, maxsteps=0, use_samples=False, ):
+    """
+    Computes the state of a layer, given the state of its incoming neighbours.
+
+    Args:
+      train: True if this computation is happening during training, False during
+        evaluation.
+      compute_input: If True, the state of the input layer will be computed.
+        Otherwise, it will be loaded as data.
+      step: Training step.
+      maxsteps: Maximum number of steps that will be taken (Some hyperparameters
+        may depend on this.)
+      use_samples: Use neighbours' samples to update the layer's state.
+  """
+    if layer.is_input and not compute_input:
+      layer.GetData()
+    else:
+      for i, edge in enumerate(layer.incoming_edge):
+        neighbour = layer.incoming_neighbour[i]
+        if use_samples:
+          inputs = neighbour.sample
+        else:
+          inputs = neighbour.state
+        if edge.node2 == layer:
+          w = edge.params['weight'].T
+          factor = edge.proto.up_factor
+        else:
+          w = edge.params['weight']
+          factor = edge.proto.down_factor
+        if i == 0:
+          cm.dot(w, inputs, target=layer.state)
+          if factor != 1:
+            layer.state.mult(factor)
+        else:
+          layer.state.add_dot(w, inputs, mult=factor)
+      b = layer.params['bias']
+      if layer.replicated_neighbour is None:
+        layer.state.add_col_vec(b)
+      else:
+        layer.state.add_dot(b, layer.replicated_neighbour.NN)
+      layer.ApplyActivation()
+    if layer.hyperparams.dropout:
+      if train and maxsteps - step >= layer.hyperparams.stop_dropout_for_last:
+        # Randomly set states to zero.
+        if layer.pos_phase:
+          layer.mask.fill_with_rand()
+          layer.mask.greater_than(layer.hyperparams.dropout_prob)
+        layer.state.mult(layer.mask)
+      else:
+        # Produce expected output.
+        layer.state.mult(1.0 - layer.hyperparams.dropout_prob)
+
+
   def PositivePhase(self, train=False, evaluate=False, step=0):
     """Perform the positive phase.
 
     This method computes the sufficient statistics under the data distribution.
     """
-    logging.debug('Positive Phase')
-
-    # Tell everyone that the positive phase is starting.
-    for node in self.node_list:
-      node.SetPhase(pos=True)
 
     # Do a forward pass in the initializer net, if set.
     if self.initializer_net:
@@ -73,7 +128,7 @@ class DBM(NeuralNet):
     for node in self.node_list:
       if node.is_input:
         # Load data into input nodes.
-        node.ComputeUp(train=train)
+        self.ComputeUp(node, train=train)
       elif node.is_initialized:
         node.state.assign(node.initialization_source.state)
       else:
@@ -83,7 +138,7 @@ class DBM(NeuralNet):
     # Starting MF.
     for i in range(self.net.hyperparams.mf_steps):
       for node in self.pos_phase_order:
-        node.ComputeUp(train=train, step=step, maxsteps=self.train_stop_steps)
+        self.ComputeUp(node, train=train, step=step, maxsteps=self.train_stop_steps)
     # End of MF.
 
     losses = []
@@ -97,18 +152,31 @@ class DBM(NeuralNet):
           perf.sparsity = r
           losses.append(perf)
       for edge in self.edge:
-        edge.CollectSufficientStatistics(pos=True)
+        edge.CollectSufficientStatistics()
 
     # Evaluation
     # If CD, then this step would be performed by the negative phase anyways,
     # So the loss is measured in the negative phase instead. Return []
     # Otherwise, reconstruct the input given the other layers and report
     # the loss.
-    if self.t_op.optimizer == deepnet_pb2.Operation.PCD or evaluate:
+    if not self.cd or evaluate:
       for node in self.input_datalayer:
-        node.ComputeUp(recon=True, step=step, maxsteps=self.train_stop_steps)
+        self.ComputeUp(node, compute_input=True, step=step, maxsteps=self.train_stop_steps)
         losses.append(node.GetLoss())
     return losses
+
+  def InitializeNegPhase(self, layer, to_pos=False):
+    """Initialize negative particles.
+
+    Copies the pos state and samples it to initialize the ngative particles.
+    """
+    self.SetPhase(layer, pos=False)
+    if to_pos:
+      layer.state.assign(layer.pos_state)
+    else:
+      layer.ResetState(rand=True)
+    layer.Sample()
+    self.SetPhase(layer, pos=True)
 
   def NegativePhase(self, step=0, train=True, gibbs_steps=-1):
     """Perform the negative phase.
@@ -119,16 +187,15 @@ class DBM(NeuralNet):
       train: If true, then this computation is happening during training.
       gibbs_steps: Number of gibbs steps to take. If -1, use default.
     """
-    logging.debug('Negative Phase')
     losses = []
-    # Tell everyone we are doing the negative phase.
-    for node in self.node_list:
-      node.SetPhase(pos=False)
 
-    if self.t_op.optimizer == deepnet_pb2.Operation.CD:
+    if self.cd:
       for node in self.node_list:
         if not node.is_input:
           node.Sample()
+    else:
+      for node in self.layer:
+        self.SetPhase(node, pos=False)
 
     if gibbs_steps < 0:
       h = self.net.hyperparams
@@ -140,9 +207,10 @@ class DBM(NeuralNet):
 
     for i in range(gibbs_steps):
       for node in self.neg_phase_order:
-        node.ComputeUp(train=train, step=step, maxsteps=self.train_stop_steps)
-        if (i == 0 and node.is_input
-            and self.t_op.optimizer == deepnet_pb2.Operation.CD):
+        self.ComputeUp(node, train=train, step=step,
+                       maxsteps=self.train_stop_steps, use_samples=True,
+                       compute_input=True)
+        if i == 0 and node.is_input and self.cd:
           losses.append(node.GetLoss())
         if node.is_input:
           if node.sample_input and node.hyperparams.sample_input_after <= step:
@@ -156,74 +224,42 @@ class DBM(NeuralNet):
 
     if train:
       for node in self.layer:
-        node.CollectSufficientStatistics()
-        node.UpdateParams(step=step)
+        node.CollectSufficientStatistics(neg=True)
+        self.UpdateLayerParams(node, step=step)
       for edge in self.edge:
-        edge.CollectSufficientStatistics(pos=False)
-        edge.UpdateParams(step=step)
+        edge.CollectSufficientStatistics(neg=True)
+        self.UpdateEdgeParams(edge, step=step)
 
-    # Reset phase.
-    for node in self.node_list:
-      node.SetPhase(pos=True)
+    if not self.cd:
+      for node in self.layer:
+        self.SetPhase(node, pos=True)
     return losses
 
-  def Infer(self, steps=0, method='mf', dumpstate=False):
-    """Do Inference, conditioned on the inputs.
+  def UpdateLayerParams(self, layer, step=0):
+    """Update parameters associated with this layer."""
+    h = layer.hyperparams
+    numcases = layer.batchsize
+    momentum, epsilon = GetMomentumAndEpsilon(layer.hyperparams, step)
+    b = layer.params['bias']
+    b_delta = layer.grad_bias
+    b_delta.mult(momentum)
+    b_delta.add_mult(layer.suff_stats, 1.0 / numcases)
+    b.add_mult(b_delta, epsilon)
 
-    This method performs MF / Gibbs sampling for the hidden units conditioned on the
-    inputs.
-    Args:
-      steps: Number of steps of MF / Gibbs Sampling to perform. 0 means use
-        the model's default value that was used during training.
-      method: 'mf' or 'gibbs'.
-      dumpstate: Dump the model's state to disk at each step.
-    """
-    logging.debug('Running Inference')
-    if steps == 0:
-      if method == 'mf':
-        steps = self.net.hyperparams.mf_steps
-      else:
-        steps = self.net.hyperparams.gibbs_steps
-
-    # Load data
-    for node in self.node_list:
-      if node.is_input:
-        node.SetPhase(pos=True)
-        node.ComputeUp()  # Loads data into pos_state.
-
-    if method == 'mf':
-      for node in self.node_list:
-        node.SetPhase(pos=True)
-        if not node.is_input:
-          node.ResetState(rand=True)
-    else:
-      # Switch to negative phase and initialize samples.
-      for node in self.node_list:
-        node.SetPhase(pos=False)
-        if node.is_input:
-          node.sample.assign(node.pos_state)
-          node.state.assign(node.pos_state)
-        else:
-          node.ResetState(rand=True)
-
-    for i in range(steps):
-      for node in self.pos_phase_order:
-        node.ComputeUp()
-        if method == 'gibbs':
-          node.Sample()
-      if dumpstate:
-        if method == 'gibbs':
-          for node in self.node_list:
-            node.pos_state.assign(node.neg_state)
-        for net in self.feed_backward_net:
-          net.ForwardPropagate(train=False)
-        self.DumpModelState(i)
-
-    # End of Inference.
-    if method == 'gibbs':
-      for node in self.node_list:
-        node.pos_state.assign(node.neg_state)
-        node.pos_sample.assign(node.neg_sample)
+  def UpdateEdgeParams(self, edge, step):
+    """ Update the parameters associated with this edge."""
+    h = edge.hyperparams
+    batchsize = edge.node1.batchsize
+    momentum, epsilon = GetMomentumAndEpsilon(edge.hyperparams, step)
+    w_delta = edge.grad_weight
+    w = edge.params['weight']
+    w_delta.mult(momentum)
+    if h.apply_l2_decay:
+      w_delta.add_mult(w, -h.l2_decay)
+    w_delta.add_mult(edge.suff_stats, 1.0 / batchsize)
+    w.add_mult(w_delta, epsilon)
+    if h.apply_weight_norm:
+      w.norm_limit(h.weight_norm, axis=0)
 
   def GetBatch(self, handler=None):
     super(DBM, self).GetBatch(handler=handler)
@@ -232,13 +268,9 @@ class DBM(NeuralNet):
 
   def TrainOneBatch(self, step):
     losses1 = self.PositivePhase(train=True, step=step)
-    if step == 0:
-      if self.t_op.optimizer == deepnet_pb2.Operation.CD:
-        for node in self.layer:
-          node.TiePhases()
-      elif self.t_op.optimizer == deepnet_pb2.Operation.PCD:
-        for node in self.layer:
-          node.InitializeNegPhase()
+    if step == 0 and self.t_op.optimizer == deepnet_pb2.Operation.PCD:
+      for node in self.layer:
+        self.InitializeNegPhase(node)
     losses2 = self.NegativePhase(step, train=True)
     losses1.extend(losses2)
     return losses1
@@ -397,27 +429,59 @@ class DBM(NeuralNet):
       l = None
     return l
 
-  def DoInference(self, layername, numbatches, inputlayername=[], method='mf',
-                  steps=0, validation=True):
-    indices = range(numbatches * self.e_op.batchsize)
-    self.rep_pos = 0
-    inputlayer = []
-    self.inputs = []
-    layer_to_tap = self.GetLayerByName(layername)
-    self.rep = np.zeros((numbatches * self.e_op.batchsize, layer_to_tap.state.shape[0]))
-    for i, lname in enumerate(inputlayername):
-      l = self.GetLayerByName(lname)
-      inputlayer.append(l)
-      self.inputs.append(np.zeros((numbatches * self.e_op.batchsize,
-                                   l.state.shape[0])))
-    if validation:
+  def Inference(self, steps, layernames, unclamped_layers, output_dir, memory='1G', dataset='test', method='gibbs'):
+    layers_to_infer = [self.GetLayerByName(l) for l in layernames]
+    layers_to_unclamp = [self.GetLayerByName(l) for l in unclamped_layers]
+
+    numdim_list = [layer.state.shape[0] for layer in layers_to_infer]
+    for l in layers_to_unclamp:
+      l.is_input = False
+      self.pos_phase_order.append(l)
+
+    if dataset == 'train':
+      datagetter = self.GetTrainBatch
+      if self.train_data_handler is None:
+        return
+      numbatches = self.train_data_handler.num_batches
+      size = numbatches * self.train_data_handler.batchsize
+    elif dataset == 'validation':
       datagetter = self.GetValidationBatch
-    else:
+      if self.validation_data_handler is None:
+        return
+      numbatches = self.validation_data_handler.num_batches
+      size = numbatches * self.validation_data_handler.batchsize
+    elif dataset == 'test':
       datagetter = self.GetTestBatch
+      if self.test_data_handler is None:
+        return
+      numbatches = self.test_data_handler.num_batches
+      size = numbatches * self.test_data_handler.batchsize
+    dw = DataWriter(layernames, output_dir, memory, numdim_list, size)
+
+    gibbs = method == 'gibbs'
+    mf = method == 'mf'
+
     for batch in range(numbatches):
+      sys.stdout.write('\r%d' % (batch+1))
+      sys.stdout.flush()
       datagetter()
-      self.InferOneBatch(layer_to_tap, inputlayer, steps, method)
-    return self.rep, self.inputs
+      for node in self.node_list:
+        if node.is_input or node.is_initialized:
+          node.GetData()
+        else:
+          node.ResetState(rand=False)
+        if gibbs:
+          node.sample.assign(node.state)
+      for i in range(steps):
+        for node in self.pos_phase_order:
+          self.ComputeUp(node, use_samples=gibbs)
+          if gibbs:
+            node.Sample()
+      output = [l.state.asarray().T for l in layers_to_infer]
+      dw.Submit(output)
+    sys.stdout.write('\n')
+    size = dw.Commit()
+    return size[0]
 
   def ReconstructOneBatch(self, layer, inputlayers):
     self.PositivePhase(train=False, evaluate=True)
@@ -427,16 +491,6 @@ class DBM(NeuralNet):
       self.inputs[i][self.recon_pos:self.recon_pos + self.e_op.batchsize,:] =\
         l.data.asarray().T
     self.recon_pos += self.e_op.batchsize
-
-  def InferOneBatch(self, layer, inputlayers, steps, method):
-    self.Infer(steps, method)
-    batchsize = self.e_op.batchsize
-    self.rep[self.rep_pos:self.rep_pos + batchsize, :] =\
-        layer.state.asarray().T
-    for i, l in enumerate(inputlayers):
-      self.inputs[i][self.rep_pos:self.rep_pos + batchsize,:] =\
-          l.data.asarray().T
-    self.rep_pos += batchsize
 
   def GetRepresentationOneBatch(self, layer, inputlayers):
     self.PositivePhase(train=False, evaluate=False)

@@ -10,18 +10,30 @@ import pdb
 import os
 
 class Edge(object):
-  def __init__(self, proto, node1, node2):
-    self.proto = proto
-    self.id = None
-    self.params = {}
-    self.hyperparams = None
-    self.proto = proto
+  def __init__(self, proto, node1, node2, t_op=None, tied_to=None):
     self.node1 = node1
     self.node2 = node2
+    self.transpose = False
+    self.tied_to = tied_to
+    if proto.tied:
+      tied_to.num_shares += 1
+      self.transpose = proto.tied_transpose
+      proto.CopyFrom(tied_to.proto)
+      proto.node1 = node1.name
+      proto.node2 = node2.name
+      for param in proto.param:
+        if param.dimensions:
+          dims = list(reversed(param.dimensions))
+          del param.dimensions[:]
+          param.dimensions.extend(dims)
+    self.proto = proto
+    self.params = {}
     self.conv = False
     self.local = False
+    self.t_op = t_op
     self.name = '%s:%s' % (self.node1.name, self.node2.name)
     self.prefix = proto.prefix
+    self.hyperparams = None
     if proto.directed:
       node1.AddOutgoingEdge(self)
       node2.AddIncomingEdge(self)
@@ -31,15 +43,17 @@ class Edge(object):
       node2.AddOutgoingEdge(self)
       node2.AddIncomingEdge(self)
 
-    self.LoadParams()
+    self.LoadParams(tied_to=tied_to)
     self.marker = 0
     self.fig = visualize.GetFigId()
     self.fig_stats = visualize.GetFigId()
     if self.conv or self.local:
       self.conv_filter_fig = visualize.GetFigId()
+    self.num_shares = 1
+    self.num_grads_received = 0
 
   def Show(self):
-    if not self.proto.hyperparams.enable_display:
+    if not self.hyperparams.enable_display:
       return
     if self.node1.is_input:
       if self.conv or self.local:
@@ -131,95 +145,6 @@ class Edge(object):
     for param in self.proto.param:
       param.mat = util.NumpyAsParameter(self.params[param.name].asarray())
 
-  def ConvOuter(self, grad):
-    """Get the gradient for the weights in this edge.
-    Args:
-      grad: (output) the gradient for the weights in this edge.
-    """
-    w = self.params['weight']
-    conv = self.conv_params
-    size = conv.size
-    stride = conv.stride
-    padding = conv.padding
-    num_filters = conv.num_filters
-    num_colors = conv.num_colors
-
-    f, numdims = w.shape
-    assert f == num_filters, 'f is %d but num_filters is %d' % (f, num_filters)
-    if self.conv:
-      assert numdims == size**2 * num_colors
-    input_t = self.input_t
-    if conv.max_pool:
-      output_t = self.unpooled_layer
-    elif conv.rnorm:
-      output_t = self.rnorm_temp2
-    else:
-      output_t = self.output_t2
-    numdims, numimages = self.node1.state.shape
-
-    assert numdims % num_colors == 0
-    x = int(np.sqrt(numdims / num_colors))
-    assert x**2 == numdims/num_colors
-
-    n_locs = (x + 2 * padding - size) / stride + 1
-
-    if self.conv:
-      cc.convOutp(input_t, output_t, grad, n_locs, padding, size, stride, num_colors)
-    else:
-      cc.localOutp(input_t, output_t, grad, n_locs, padding, size, stride, num_colors)
-
-
-  def GetMomentumAndEpsilon(self, step):
-    h = self.hyperparams
-    if h.momentum_change_steps > step:
-      f = float(step) / h.momentum_change_steps
-      momentum = (1.0 - f) * h.initial_momentum + f * h.final_momentum
-    else:
-      momentum = h.final_momentum
-    epsilon = h.base_epsilon
-    if h.epsilon_decay == deepnet_pb2.Hyperparams.INVERSE_T:
-      epsilon = h.base_epsilon / (1 + float(step) / h.epsilon_decay_half_life)
-    elif h.epsilon_decay == deepnet_pb2.Hyperparams.EXPONENTIAL:
-      epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
-    if step < h.start_learning_after:
-      epsilon = 0.0
-    return momentum, epsilon
-
-  def UpdateParams(self, deriv, step):
-    """ Update the parameters associated with this edge.
-
-    Update the weights and associated parameters.
-    Args:
-      deriv: Gradient w.r.t the inputs at the outgoing end.
-      step: Training step.
-    """
-
-    logging.debug('UpdateParams in edge %s', self.name)
-    h = self.hyperparams
-    numcases = self.node1.batchsize
-
-    momentum, epsilon = self.GetMomentumAndEpsilon(step)
-
-    w_delta = self.grad_weight
-    w = self.params['weight']
-    if h.adapt == deepnet_pb2.Hyperparams.NONE:
-      w_delta.mult(momentum)
-      if h.apply_l2_decay:
-        w_delta.add_mult(w, h.l2_decay)
-      if h.apply_l1_decay and step > h.apply_l1decay_after:
-        w.sign(target=self.temp)
-        w_delta.add_mult(self.temp, h.l1_decay)
-      if self.conv or self.local:
-        self.ConvOuter(self.temp)
-        w_delta.add_mult(self.temp, 1.0 / numcases)
-      else:
-        w_delta.add_dot(self.node1.state, deriv.T, 1.0 / numcases)
-      w.add_mult(w_delta, -epsilon)
-    else:
-      raise Exception('Not implemented.')
-    if h.apply_weight_norm:
-      w.norm_limit(h.weight_norm, axis=0)
-
   def AllocateBatchsizeDependentMemory(self):
     for param in self.proto.param:
       if param.conv or param.local:
@@ -271,28 +196,17 @@ class Edge(object):
 
     return n_locs
 
-  def LoadParams(self):
+  def LoadParams(self, tied_to=None):
     """Load the parameters for this edge.
 
     Load the parameters if present in self.proto. Otherwise initialize them
     appropriately.
     """
-    proto = self.proto
     node1 = self.node1
     node2 = self.node2
+    proto = self.proto
     self.hyperparams = proto.hyperparams
     param_names = [param.name for param in proto.param]
-    """
-    for param in proto.param:
-      if 'grad_'+param.name not in param_names and not param.name.startswith('grad_'):
-        grad_p = deepnet_pb2.Parameter()
-        grad_p.CopyFrom(param)
-        grad_p.name = 'grad_' + param.name
-        grad_p.initialization = deepnet_pb2.Parameter.CONSTANT
-        grad_p.constant = 0
-        proto.param.extend([grad_p])
-    """
-
     for param in proto.param:
       if param.conv or param.local:
         n_locs = self.AllocateMemoryForConvolutions(param, node1, node2)
@@ -306,13 +220,52 @@ class Edge(object):
           dims = [node1.numlabels * node1.dimensions,
                   node2.numlabels * node2.dimensions]
         param.dimensions.extend(dims)
-      if param.mat:  # and 'grad' not in param.name:
-        mat = util.ParameterAsNumpy(param)
+      if tied_to:
+        if self.transpose:
+          self.params[param.name] = tied_to.params[param.name].T
+        else:
+          self.params[param.name] = tied_to.params[param.name]
+        mat = self.params[param.name]
       else:
-        mat = self.InitializeParameter(param)
-      self.params[param.name] = cm.CUDAMatrix(mat)
+        if param.mat:  # and 'grad' not in param.name:
+          mat = util.ParameterAsNumpy(param)
+        else:
+          mat = self.InitializeParameter(param)
+        self.params[param.name] = cm.CUDAMatrix(mat)
       if param.name == 'weight':
         self.temp = cm.empty(mat.shape)
-        self.temp2 = cm.empty(mat.shape)
+        #self.temp2 = cm.empty(mat.shape)
+        self.gradient = cm.empty(mat.shape)
         self.grad_weight = cm.empty(mat.shape)
+        self.gradient.assign(0)
         self.grad_weight.assign(0)
+    if self.t_op and (self.t_op.optimizer == deepnet_pb2.Operation.PCD or \
+      self.t_op.optimizer == deepnet_pb2.Operation.CD):
+      self.suff_stats = cm.empty((self.node1.numlabels * self.node1.dimensions,
+                                  self.node2.numlabels * self.node2.dimensions))
+
+  def CollectSufficientStatistics(self, neg=False):
+    logging.debug('Collecting suff stats %s', self.name)
+    if self.node1.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+      self.node1.state.div_by_row(self.node1.NN)
+    if self.node2.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+      self.node2.state.div_by_row(self.node2.NN)
+    if not neg:
+      h1 = self.node1.hyperparams
+      h2 = self.node2.hyperparams
+      if h1.sparsity:
+        self.node1.state.add_col_mult(self.node1.means_temp, -1)
+      if h2.sparsity:
+        self.node2.state.add_col_mult(self.node2.means_temp, -1)
+      cm.dot(self.node1.state, self.node2.state.T, target=self.suff_stats)
+      if h1.sparsity:
+        self.node1.state.add_col_vec(self.node1.means_temp)
+      if h2.sparsity:
+        self.node2.state.add_col_vec(self.node2.means_temp)
+    else:
+      self.suff_stats.add_dot(self.node1.state, self.node2.state.T, mult=-1.0)
+    if self.node1.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+      self.node1.state.mult_by_row(self.node1.NN)
+    if self.node2.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
+      self.node2.state.mult_by_row(self.node2.NN)
+

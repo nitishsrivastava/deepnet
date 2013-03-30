@@ -117,6 +117,60 @@ def CopyLayer(layer):
   copy.CopyFrom(layer)
   return copy
 
+def GetPerformanceStats(stat, prefix=''):
+  s = ''
+  if stat.compute_cross_entropy:
+    s += ' %s_CE: %.3f' % (prefix, stat.cross_entropy / stat.count)
+  if stat.compute_correct_preds:
+    s += ' %s_Acc: %.3f (%d/%d)' % (
+      prefix, stat.correct_preds/stat.count, stat.correct_preds, stat.count)
+  if stat.compute_error:
+    s += ' %s_E: %.5f' % (prefix, stat.error / stat.count)
+  if stat.compute_MAP and prefix != 'T':
+    s += ' %s_MAP: %.3f' % (prefix, stat.MAP)
+  if stat.compute_prec50 and prefix != 'T':
+    s += ' %s_prec50: %.3f' % (prefix, stat.prec50)
+  if stat.compute_sparsity:
+    s += ' %s_sp: %.3f' % (prefix, stat.sparsity / stat.count)
+  return s
+
+def Accumulate(acc, perf):
+ acc.count += perf.count
+ acc.cross_entropy += perf.cross_entropy
+ acc.error += perf.error
+ acc.correct_preds += perf.correct_preds
+ acc.sparsity += perf.sparsity
+
+def CreateLayer(layer_class, proto, t_op):
+  for cls in layer_class.__subclasses__():
+    if cls.IsLayerType(proto):
+      return cls(proto, t_op)
+    l = CreateLayer(cls, proto, t_op)
+    if l is not None:
+      return l
+  return None
+
+
+def GetMomentumAndEpsilon(h, step):
+  """
+  if h.momentum_change_steps > step:
+    f = float(step) / h.momentum_change_steps
+    momentum = (1.0 - f) * h.initial_momentum + f * h.final_momentum
+  else:
+    momentum = h.final_momentum
+  """
+  momentum = h.final_momentum - (h.final_momentum - h.initial_momentum)*np.exp(-float(step)/h.momentum_change_steps)
+  epsilon = h.base_epsilon
+  if h.epsilon_decay == deepnet_pb2.Hyperparams.INVERSE_T:
+    epsilon = h.base_epsilon / (1 + float(step) / h.epsilon_decay_half_life)
+  elif h.epsilon_decay == deepnet_pb2.Hyperparams.EXPONENTIAL:
+    epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
+  if step < h.start_learning_after:
+    epsilon = 0.0
+  return momentum, epsilon
+
+
+
 
 # For Navdeep's data.
 def save(fname, var_list, source_dict):

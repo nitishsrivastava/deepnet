@@ -3,7 +3,7 @@ from trainer import *
 
 def ExtractRepresentations(model_file, train_op_file, layernames,
                            base_output_dir, memory='10G',
-                           datasets=['train', 'validation', 'test'],
+                           datasets=['validation', 'test', 'train'],
                            gpu_mem='2G', main_mem='30G', data_proto=None):
   if isinstance(model_file, str):
     model = util.ReadModel(model_file)
@@ -56,9 +56,9 @@ def main():
   board = LockGPU()
   model_file = sys.argv[1]
   train_op_file = sys.argv[2]
-  layername = sys.argv[3]
+  layernames = sys.argv[3].split()
   output_dir = sys.argv[4]
-  datasets = ['train', 'validation', 'test']
+  datasets = ['validation', 'test', 'train']
   #datasets = ['validation', 'test']
   #datasets = ['test']
   gpu_mem = '2G'
@@ -71,7 +71,7 @@ def main():
   if len(sys.argv) > 7:
     data_proto = sys.argv[7]
 
-  ExtractRepresentations(model_file, train_op_file, [layername], output_dir,
+  ExtractRepresentations(model_file, train_op_file, layernames, output_dir,
                          datasets=datasets, gpu_mem=gpu_mem, main_mem=main_mem,
                          data_proto=data_proto)
   FreeGPU(board)

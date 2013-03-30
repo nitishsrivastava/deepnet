@@ -997,12 +997,12 @@ class CUDAMatrix(object):
 
         return target
 
-    def dot(self, mat2, target = None):
+    def dot(self, mat2, mult=1.0, target = None):
         """
-        Multiply the matrix by mat2 from the right.
+        Multiply the matrix by mat2 from the right and multiply by scalar mult.
         """
 
-        return dot(self, mat2, target)
+        return dot(self, mat2, mult, target)
 
     def add_dot(self, m1, m2, mult=1.0):
         """
@@ -1373,7 +1373,7 @@ def sum(mat, axis, target = None):
 
     return target
 
-def dot(m1, m2, target = None):
+def dot(m1, m2, mult=1.0, target = None):
     """
     Find the dot product between m1 and m2.
     """
@@ -1384,7 +1384,7 @@ def dot(m1, m2, target = None):
 
         target = empty((m, n))
 
-    err_code = _cudamat.dot(m1.p_mat, m2.p_mat, target.p_mat, ct.c_float(0.), ct.c_float(1.))
+    err_code = _cudamat.dot(m1.p_mat, m2.p_mat, target.p_mat, ct.c_float(0.), ct.c_float(mult))
     if err_code:
         raise generate_exception(err_code)
 
