@@ -35,6 +35,7 @@ class SoftmaxLayer(Layer):
     dimensions = self.dimensions
     numlabels = self.numlabels
     self.data = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
+    self.deriv = cm.CUDAMatrix(np.zeros((numlabels*dimensions, batchsize)))
     self.batchsize_temp = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
     if self.loss_function == deepnet_pb2.Layer.CROSS_ENTROPY:
       self.temp2 = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
