@@ -61,7 +61,8 @@ class DBM(NeuralNet):
   def ComputeUnnormalizedLogProb(self):
     pass
 
-  def ComputeUp(self, layer, train=False, compute_input=False, step=0, maxsteps=0, use_samples=False, ):
+  def ComputeUp(self, layer, train=False, compute_input=False, step=0,
+                maxsteps=0, use_samples=False, neg_phase=False):
     """
     Computes the state of a layer, given the state of its incoming neighbours.
 
@@ -105,7 +106,7 @@ class DBM(NeuralNet):
     if layer.hyperparams.dropout:
       if train and maxsteps - step >= layer.hyperparams.stop_dropout_for_last:
         # Randomly set states to zero.
-        if layer.pos_phase:
+        if not neg_phase:
           layer.mask.fill_with_rand()
           layer.mask.greater_than(layer.hyperparams.dropout_prob)
         layer.state.mult(layer.mask)
@@ -209,7 +210,7 @@ class DBM(NeuralNet):
       for node in self.neg_phase_order:
         self.ComputeUp(node, train=train, step=step,
                        maxsteps=self.train_stop_steps, use_samples=True,
-                       compute_input=True)
+                       compute_input=True, neg_phase=True)
         if i == 0 and node.is_input and self.cd:
           losses.append(node.GetLoss())
         if node.is_input:
