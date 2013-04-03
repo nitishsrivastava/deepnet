@@ -257,6 +257,9 @@ class DBM(NeuralNet):
     w_delta.mult(momentum)
     if h.apply_l2_decay:
       w_delta.add_mult(w, -h.l2_decay)
+    if h.apply_l1_decay and step > h.apply_l1decay_after:
+      w.sign(target=edge.temp)
+      w_delta.add_mult(edge.temp, h.l1_decay)
     w_delta.add_mult(edge.suff_stats, 1.0 / batchsize)
     w.add_mult(w_delta, epsilon)
     if h.apply_weight_norm:
