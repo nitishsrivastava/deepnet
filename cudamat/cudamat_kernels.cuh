@@ -55,6 +55,8 @@ __global__ void kNormLimitColumnwise(float* mat, float* target, float norm, unsi
 __global__ void kSumAll(float* mat, unsigned int len);
 __global__ void kSign(float* mat, float* target, unsigned int len);
 __global__ void kApplySigmoid(float* mat, float* target, unsigned int len);
+__global__ void kApplySin(float* mat, float* target, unsigned int len);
+__global__ void kApplyCos(float* mat, float* target, unsigned int len);
 __global__ void kApplyTanh(float* mat, float* target, unsigned int len);
 __global__ void kApplyAbs(float* mat, float* target, unsigned int len);
 __global__ void kApplyLog1PlusExp(float* mat, float* target, unsigned int len);
@@ -86,6 +88,8 @@ __global__ void kAdd(float* a, float* b, float* dest, unsigned int numEls);
 __global__ void kSubtract(float* a, float* b, float* dest, unsigned int numEls);
 __global__ void kMult(float* a, float* b, float* dest, unsigned int numEls);
 __global__ void kLogisticDeriv(float* a, float* b, float* dest, unsigned int numEls);
+__global__ void kSinDeriv(float* a, float* b, float* dest, unsigned int numEls);
+__global__ void kCosDeriv(float* a, float* b, float* dest, unsigned int numEls);
 __global__ void kTanhDeriv(float* a, float* b, float* dest, unsigned int numEls);
 __global__ void kRectifiedLinearDeriv(float* a, float* b, float* dest, unsigned int numEls);
 __global__ void kRectifiedLinearSmoothDeriv(float* a, float* b, float* dest, unsigned int numEls);

@@ -9,7 +9,7 @@ class DataViewer(object):
     assert os.path.exists(proto_file)
     self.data_proto = util.ReadData(proto_file)
 
-  def Load(self, name, batchsize=1000, typesize=4):
+  def Load(self, name, batchsize=None, typesize=4):
     data_proto = self.data_proto
     try:
       this_set = next(d for d in data_proto.data if d.name == name)
@@ -20,10 +20,13 @@ class DataViewer(object):
     filenames = sorted(glob.glob(os.path.join(data_proto.prefix,
                                               this_set.file_pattern)))
     numdims = np.prod(np.array(this_set.dimensions))
+    numlabels = this_set.num_labels
     key = this_set.key
-    self.numdims = numdims
-    self.batchsize = batchsize
+    self.numdims = numdims * numlabels
     datasetsize = this_set.size
+    if batchsize is None:
+      batchsize = datasetsize
+    self.batchsize = batchsize
     total_disk_space = datasetsize * numdims * typesize
     self.numbatches = datasetsize / batchsize
     max_cpu_capacity = min(total_disk_space, GetBytes(data_proto.main_memory))
@@ -35,7 +38,10 @@ class DataViewer(object):
                            typesize = typesize, randomize=False)
 
   def Get(self):
-    return self.cpu_cache.Get(self.batchsize)[0]
+    datachunk = self.cpu_cache.Get(self.batchsize)[0]
+    if 'sparse' in datachunk.__module__:
+      datachunk = datachunk.toarray()
+    return datachunk
 
   def ComputeStats(self):
     numdims = self.numdims
@@ -65,7 +71,13 @@ if __name__ == '__main__':
   data_proto_file = sys.argv[1]
   outputfilename = sys.argv[2]
   data_name = sys.argv[3]
+  batchsize = 100
+  if len(sys.argv) > 4:
+    if sys.argv[4] == 'all':
+      batchsize = None
+    else:
+      batchsize = int(sys.argv[4])
   dv = DataViewer(data_proto_file)
-  dv.Load(data_name, batchsize=100)
+  dv.Load(data_name, batchsize=batchsize)
   stats = dv.ComputeStats()
   np.savez(outputfilename, **stats)

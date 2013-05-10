@@ -12,7 +12,7 @@ from google.protobuf import text_format
 
 def ParameterAsNumpy(param):
   """Converts a serialized parameter string into a numpy array."""
-  return param.mult_factor * np.fromstring(param.mat, dtype='float32').reshape(
+  return np.fromstring(param.mat, dtype='float32').reshape(
     *tuple(param.dimensions))
 
 def NumpyAsParameter(numpy_array):
@@ -125,7 +125,7 @@ def GetPerformanceStats(stat, prefix=''):
     s += ' %s_Acc: %.3f (%d/%d)' % (
       prefix, stat.correct_preds/stat.count, stat.correct_preds, stat.count)
   if stat.compute_error:
-    s += ' %s_E: %.5f' % (prefix, stat.error / stat.count)
+    s += ' %s_E: %.7f' % (prefix, stat.error / stat.count)
   if stat.compute_MAP and prefix != 'T':
     s += ' %s_MAP: %.3f' % (prefix, stat.MAP)
   if stat.compute_prec50 and prefix != 'T':
@@ -141,36 +141,20 @@ def Accumulate(acc, perf):
  acc.correct_preds += perf.correct_preds
  acc.sparsity += perf.sparsity
 
-def CreateLayer(layer_class, proto, t_op):
+def CreateLayer(layer_class, proto, *args, **kwargs):
   for cls in layer_class.__subclasses__():
     if cls.IsLayerType(proto):
-      return cls(proto, t_op)
-    l = CreateLayer(cls, proto, t_op)
+      return cls(proto, *args, **kwargs)
+    l = CreateLayer(cls, proto, *args, **kwargs)
     if l is not None:
       return l
   return None
 
-
-def GetMomentumAndEpsilon(h, step):
-  """
-  if h.momentum_change_steps > step:
-    f = float(step) / h.momentum_change_steps
-    momentum = (1.0 - f) * h.initial_momentum + f * h.final_momentum
-  else:
-    momentum = h.final_momentum
-  """
-  momentum = h.final_momentum - (h.final_momentum - h.initial_momentum)*np.exp(-float(step)/h.momentum_change_steps)
-  epsilon = h.base_epsilon
-  if h.epsilon_decay == deepnet_pb2.Hyperparams.INVERSE_T:
-    epsilon = h.base_epsilon / (1 + float(step) / h.epsilon_decay_half_life)
-  elif h.epsilon_decay == deepnet_pb2.Hyperparams.EXPONENTIAL:
-    epsilon = h.base_epsilon / np.power(2, float(step) / h.epsilon_decay_half_life)
-  if step < h.start_learning_after:
-    epsilon = 0.0
-  return momentum, epsilon
-
-
-
+def LoadMissing(p1, p2):
+  p = p1.__class__()
+  p.CopyFrom(p2)
+  p.MergeFrom(p1)
+  return p
 
 # For Navdeep's data.
 def save(fname, var_list, source_dict):

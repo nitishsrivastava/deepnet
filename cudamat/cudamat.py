@@ -976,6 +976,20 @@ class CUDAMatrix(object):
 
         return target
 
+    def apply_cos(self, target = None):
+        """
+        Apply the cos sigmoid to each element of the matrix.
+        """
+
+        return cos(self, target)
+
+    def apply_sin(self, target = None):
+        """
+        Apply the sin sigmoid to each element of the matrix.
+        """
+
+        return sin(self, target)
+
     def apply_sigmoid(self, target = None):
         """
         Apply the logistic sigmoid to each element of the matrix.
@@ -1123,6 +1137,44 @@ class CUDAMatrix(object):
             raise generate_exception(err_code)
 
         return target
+
+    def apply_cos_deriv(self, val, target = None):
+        """
+        Apply cos derivative, where val is the activation of cos units.
+        """
+
+        if not target:
+            target = self
+
+        if isinstance(val, CUDAMatrix):
+            err_code = _cudamat.apply_cos_deriv(self.p_mat, val.p_mat, target.p_mat)
+        else:
+            raise ValueError, "Value must be of type CUDAMatrix."
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+
+    def apply_sin_deriv(self, val, target = None):
+        """
+        Apply sin derivative, where val is the activation of sin units.
+        """
+
+        if not target:
+            target = self
+
+        if isinstance(val, CUDAMatrix):
+            err_code = _cudamat.apply_sin_deriv(self.p_mat, val.p_mat, target.p_mat)
+        else:
+            raise ValueError, "Value must be of type CUDAMatrix."
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
 
     def apply_logistic_deriv(self, val, target = None):
         """
@@ -1402,6 +1454,36 @@ def vdot(m1, m2):
         raise generate_exception(err_code.value)
 
     return res
+
+def cos(mat, target = None):
+    """
+    Apply cos to each element of the matrix mat.
+    """
+
+    if not target:
+        target = mat
+
+    err_code = _cudamat.apply_cos(mat.p_mat, target.p_mat)
+    if err_code:
+        raise generate_exception(err_code)
+
+    return target
+
+
+
+def sin(mat, target = None):
+    """
+    Apply sin to each element of the matrix mat.
+    """
+
+    if not target:
+        target = mat
+
+    err_code = _cudamat.apply_sin(mat.p_mat, target.p_mat)
+    if err_code:
+        raise generate_exception(err_code)
+
+    return target
 
 def sigmoid(mat, target = None):
     """

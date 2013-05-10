@@ -31,7 +31,7 @@ class LinearLayer(Layer):
     if 'precision' in self.params:
       self.state.mult_by_col(self.params['precision'])
 
-  def GetLoss(self, get_deriv=False):
+  def GetLoss(self, get_deriv=False, **kwargs):
     """Compute loss and also deriv w.r.t to it if asked for.
 
     Compute the loss function. Targets should be in self.data, predictions
@@ -58,6 +58,8 @@ class LinearLayer(Layer):
       perf.error = error
       if get_deriv:
         self.ComputeDeriv()
+    elif self.loss_function == deepnet_pb2.Layer.HINGE_LOSS:
+      pass
     else:
       raise Exception('Unknown loss function for linear units.')
     return perf

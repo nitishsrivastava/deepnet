@@ -166,18 +166,19 @@ class DBM(NeuralNet):
         losses.append(node.GetLoss())
     return losses
 
-  def InitializeNegPhase(self, layer, to_pos=False):
+  def InitializeNegPhase(self, to_pos=False):
     """Initialize negative particles.
 
     Copies the pos state and samples it to initialize the ngative particles.
     """
-    self.SetPhase(layer, pos=False)
-    if to_pos:
-      layer.state.assign(layer.pos_state)
-    else:
-      layer.ResetState(rand=True)
-    layer.Sample()
-    self.SetPhase(layer, pos=True)
+    for layer in self.layer:
+      self.SetPhase(layer, pos=False)
+      if to_pos:
+        layer.state.assign(layer.pos_state)
+      else:
+        layer.ResetState(rand=True)
+      layer.Sample()
+      self.SetPhase(layer, pos=True)
 
   def NegativePhase(self, step=0, train=True, gibbs_steps=-1):
     """Perform the negative phase.
@@ -238,32 +239,26 @@ class DBM(NeuralNet):
 
   def UpdateLayerParams(self, layer, step=0):
     """Update parameters associated with this layer."""
-    h = layer.hyperparams
-    numcases = layer.batchsize
-    momentum, epsilon = GetMomentumAndEpsilon(layer.hyperparams, step)
-    b = layer.params['bias']
-    b_delta = layer.grad_bias
-    b_delta.mult(momentum)
-    b_delta.add_mult(layer.suff_stats, 1.0 / numcases)
-    b.add_mult(b_delta, epsilon)
+    layer.gradient.add_mult(layer.suff_stats, alpha=-1.0 / layer.batchsize)
+    if layer.tied_to:
+      layer.tied_to.gradient.add(layer.gradient)
+      layer.gradient.assign(0)
+      layer = layer.tied_to
+    layer.num_grads_received += 1
+    if layer.num_grads_received == layer.num_shares:
+      layer.Update('bias', step, no_reg=True)  # By default, do not regularize bias.
 
   def UpdateEdgeParams(self, edge, step):
     """ Update the parameters associated with this edge."""
-    h = edge.hyperparams
-    batchsize = edge.node1.batchsize
-    momentum, epsilon = GetMomentumAndEpsilon(edge.hyperparams, step)
-    w_delta = edge.grad_weight
-    w = edge.params['weight']
-    w_delta.mult(momentum)
-    if h.apply_l2_decay:
-      w_delta.add_mult(w, -h.l2_decay)
-    if h.apply_l1_decay and step > h.apply_l1decay_after:
-      w.sign(target=edge.temp)
-      w_delta.add_mult(edge.temp, -h.l1_decay)
-    w_delta.add_mult(edge.suff_stats, 1.0 / batchsize)
-    w.add_mult(w_delta, epsilon)
-    if h.apply_weight_norm:
-      w.norm_limit(h.weight_norm, axis=0)
+    numcases = edge.node1.batchsize
+    edge.gradient.add_mult(edge.suff_stats, alpha=-1.0/numcases)
+    if edge.tied_to:
+      edge.tied_to.gradient.add(edge.gradient)
+      edge.gradient.assign(0)
+      edge = edge.tied_to
+    edge.num_grads_received += 1
+    if edge.num_grads_received == edge.num_shares:
+      edge.Update('weight', step)
 
   def GetBatch(self, handler=None):
     super(DBM, self).GetBatch(handler=handler)
@@ -273,8 +268,7 @@ class DBM(NeuralNet):
   def TrainOneBatch(self, step):
     losses1 = self.PositivePhase(train=True, step=step)
     if step == 0 and self.t_op.optimizer == deepnet_pb2.Operation.PCD:
-      for node in self.layer:
-        self.InitializeNegPhase(node)
+      self.InitializeNegPhase(to_pos=True)
     losses2 = self.NegativePhase(step, train=True)
     losses1.extend(losses2)
     return losses1

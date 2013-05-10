@@ -1,6 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import cPickle as pickle
+import matplotlib.pyplot as plt
 plt.ion()
 
 fig_id = 0
@@ -13,6 +13,13 @@ def show_model_state(model, step):
     dims = int(np.floor(np.sqrt(node.state.shape[0])))
     display_w(node.sample.asarray(), dims, 10, 10, i, title=node.name)
 
+
+def show_hist(mat, fig):
+  plt.figure(fig)
+  plt.clf()
+  plt.hist(mat.flatten(), 100)
+  plt.draw()
+
 def show_stats(edge, fig, title):
   plt.figure(fig)
   plt.clf()
@@ -24,16 +31,19 @@ def display_hidden(state, fig, title, log=False, prob=True):
   plt.figure(fig)
   plt.clf()
   plt.suptitle(title)
-  plt.subplot(1, 2, 1);
+  plt.subplot(1, 3, 1)
   plt.hist(state.mean(axis=1), 100)
   if prob:
     plt.xlim([0, 1])
   plt.title('Mean Activation')
-  plt.subplot(1, 2, 2);
+  plt.subplot(1, 3, 2)
   plt.hist(state.flatten(), 100, log=log)
   if prob:
-    plt.xlim([0, 1])
+    plt.xlim([-0.1, 1.1])
   plt.title('Activation')
+  plt.subplot(1, 3, 3)
+  plt.imshow(state, cmap = plt.cm.gray, interpolation='nearest', vmax=1, vmin=0)
+  plt.title('State')
   plt.draw()
 
 def display_wsorted(w, s, r, c, fig, vmax=None, vmin=None, dataset='mnist',

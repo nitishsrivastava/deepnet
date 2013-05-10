@@ -48,7 +48,7 @@ class SoftmaxLayer(Layer):
   def GetData(self):
     self.expansion_matrix.select_columns(self.data, target=self.state)
 
-  def GetLoss(self, get_deriv=False):
+  def GetLoss(self, get_deriv=False, **kwargs):
     """Compute loss and also deriv w.r.t to it if asked for.
 
     Compute the loss function. Targets should be in self.data, predictions

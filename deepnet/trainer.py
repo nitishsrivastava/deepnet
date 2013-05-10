@@ -1,4 +1,5 @@
 from neuralnet import *
+from fastdropoutnet import *
 from dbm import *
 from dbn import *
 from sparse_coder import *
@@ -40,6 +41,8 @@ def CreateDeepnet(model, train_op, eval_op):
     return DBN(model, train_op, eval_op)
   elif model.model_type == deepnet_pb2.Model.SPARSE_CODER:
     return SparseCoder(model, train_op, eval_op)
+  elif model.model_type == deepnet_pb2.Model.FAST_DROPOUT_NET:
+    return FastDropoutNet(model, train_op, eval_op)
   else:
     raise Exception('Model not implemented.')
 

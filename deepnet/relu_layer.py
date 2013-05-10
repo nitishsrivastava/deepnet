@@ -29,7 +29,7 @@ class ReluLayer(Layer):
     """Compute derivative w.r.t input given derivative w.r.t output."""
     self.deriv.apply_rectified_linear_deriv(self.state)
 
-  def GetLoss(self, get_deriv=False):
+  def GetLoss(self, get_deriv=False, acc_deriv=False, **kwargs):
     """Compute loss and also deriv w.r.t to it if asked for.
 
     Compute the loss function. Targets should be in self.data, predictions
@@ -42,14 +42,17 @@ class ReluLayer(Layer):
     perf.MergeFrom(self.proto.performance_stats)
     perf.count = self.batchsize
     if self.loss_function == deepnet_pb2.Layer.SQUARED_LOSS:
-      self.state.subtract(self.data, target=self.deriv)
-      error = self.deriv.euclid_norm()**2
+      target = self.statesize
+      self.state.subtract(self.data, target=target)
+      error = target.euclid_norm()**2
       perf.error = error
+      if acc_deriv:
+        self.deriv.add_mult(target, alpha=self.loss_weight)
+      else:
+        self.deriv.assign(target)
       if get_deriv:
         self.ComputeDeriv()
     else:
       raise Exception('Unknown loss function for ReLU units.')
     return perf
 
-  def GetSparsityDivisor(self):
-    self.means_temp2.assign(1)

@@ -20,7 +20,7 @@ class TanhLayer(Layer):
     if self.hyperparams.dropout:
       self.deriv.mult(self.mask)
 
-  def GetLoss(self, get_deriv=False):
+  def GetLoss(self, get_deriv=False, **kwargs):
     """Computes loss.
 
     Computes the loss function. Assumes target is in self.data and predictions
@@ -47,4 +47,5 @@ class TanhLayer(Layer):
     self.means_temp2.subtract(self.means, target=self.means_temp)
     self.means_temp2.add(self.means)
     self.means_temp2.mult(self.means_temp)
+    return self.means_temp2
 

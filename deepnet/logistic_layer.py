@@ -18,7 +18,7 @@ class LogisticLayer(Layer):
     """Compute derivative w.r.t input given derivative w.r.t output."""
     self.deriv.apply_logistic_deriv(self.state)
 
-  def GetLoss(self, get_deriv=False):
+  def GetLoss(self, get_deriv=False, acc_deriv=False, **kwargs):
     """Compute loss and also deriv w.r.t to it if asked for.
 
     Compute the loss function. Targets should be in self.data, predictions
@@ -53,15 +53,16 @@ class LogisticLayer(Layer):
 
       perf.cross_entropy = cross_entropy
       perf.correct_preds = correct_preds
-
+   
     elif self.loss_function == deepnet_pb2.Layer.SQUARED_LOSS:
-      if get_deriv:
-        target = self.deriv
-      else:
-        target = self.statesize
+      target = self.statesize
       self.state.subtract(self.data, target=target)
       error = target.euclid_norm()**2
       perf.error = error
+      if acc_deriv:
+        self.deriv.add_mult(target, alpha=self.loss_weight)
+      else:
+        self.deriv.assign(target)
       if get_deriv:
         self.ComputeDeriv()
     else:
@@ -73,4 +74,5 @@ class LogisticLayer(Layer):
     self.means_temp2.assign(1)
     self.means_temp2.subtract(self.means)
     self.means_temp2.mult(self.means)
+    return self.means_temp2
   

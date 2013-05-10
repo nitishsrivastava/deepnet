@@ -15,6 +15,7 @@ message Layer {
   enum LossFunction {
     SQUARED_LOSS = 0;
     CROSS_ENTROPY = 1;
+    HINGE_LOSS = 2;
   }
   optional LossFunction loss_function = 9 [default=SQUARED_LOSS];
   optional deepnet.Hyperparams hyperparams = 10;
@@ -35,6 +36,12 @@ message Layer {
   optional bool is_initialized = 14 [default=false];
   optional string prefix = 15;
   optional bool replicate_bias = 16 [default=true];
+
+  // Tying bias parameter.
+  optional bool tied = 17 [default=false];
+  optional string tied_to = 18;
+  
+  optional float loss_weight = 19 [default=1.0];
 }
 
 message Parameter {
@@ -109,6 +116,8 @@ message Hyperparams {
     RECTIFIED_LINEAR_SMOOTH = 4;
     SOFTMAX = 5;
     REPLICATED_SOFTMAX = 6;
+    SIN = 7;
+    COS = 8;
   }
   optional Activation activation = 17 [default=LINEAR];
   optional int32 left_window = 18 [default=0];
@@ -157,6 +166,9 @@ message Hyperparams {
   optional int32 start_step_up_cd_after = 54 [default=0];
   optional bool select_model_using_acc = 55 [default=false];
   optional bool select_model_using_map = 56 [default=false];
+
+  optional bool fast_dropout = 57 [default=false];
+  optional float fast_dropout_cost = 58 [default=0];
 }
 
 message Edge {
@@ -185,6 +197,7 @@ message Model {
     DBN=2;
     DBM=3;
     SPARSE_CODER=4;
+    FAST_DROPOUT_NET=5;
   }
   required ModelType model_type = 2;
   repeated deepnet.Layer layer = 3;

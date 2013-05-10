@@ -539,6 +539,24 @@ __global__ void kSign(float* mat, float* target, unsigned int len) {
     }
 }
 
+__global__ void kApplySin(float* mat, float* target, unsigned int len) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+
+    for (unsigned int i = idx; i < len; i += numThreads) {
+        target[i] = __sinf(mat[i]);
+    }
+}
+
+__global__ void kApplyCos(float* mat, float* target, unsigned int len) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+
+    for (unsigned int i = idx; i < len; i += numThreads) {
+        target[i] = __cosf(mat[i]);
+    }
+}
+
 __global__ void kApplySigmoid(float* mat, float* target, unsigned int len) {
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int numThreads = blockDim.x * gridDim.x;
@@ -836,6 +854,22 @@ __global__ void kMult(float* a, float* b, float* dest, unsigned int numEls) {
 
     for (unsigned int i = idx; i < numEls; i += numThreads) {
         dest[i] = a[i] * b[i];
+    }
+}
+
+__global__ void kCosDeriv(float* a, float* b, float* dest, unsigned int numEls) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+    for (unsigned int i = idx; i < numEls; i += numThreads) {
+        dest[i] = -a[i] * __sinf(b[i]);
+    }
+}
+
+__global__ void kSinDeriv(float* a, float* b, float* dest, unsigned int numEls) {
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int numThreads = blockDim.x * gridDim.x;
+    for (unsigned int i = idx; i < numEls; i += numThreads) {
+        dest[i] = a[i] * __cosf(b[i]);
     }
 }
 

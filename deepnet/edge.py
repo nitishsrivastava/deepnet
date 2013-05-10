@@ -1,19 +1,11 @@
 """Implements an edge connecting two layers of neurons."""
-import cudamat as cm
-from cudamat_conv import cudamat_conv2 as cc
-import numpy as np
-import deepnet_pb2
-import visualize
-import logging
-import util
-import pdb
-import os
+from parameter import *
 
-class Edge(object):
+class Edge(Parameter):
   def __init__(self, proto, node1, node2, t_op=None, tied_to=None):
+    super(Edge, self).__init__()
     self.node1 = node1
     self.node2 = node2
-    self.transpose = False
     self.tied_to = tied_to
     if proto.tied:
       tied_to.num_shares += 1
@@ -21,11 +13,12 @@ class Edge(object):
       proto.CopyFrom(tied_to.proto)
       proto.node1 = node1.name
       proto.node2 = node2.name
-      for param in proto.param:
-        if param.dimensions:
-          dims = list(reversed(param.dimensions))
-          del param.dimensions[:]
-          param.dimensions.extend(dims)
+      if self.transpose:
+        for param in proto.param:
+          if param.dimensions:
+            dims = list(reversed(param.dimensions))
+            del param.dimensions[:]
+            param.dimensions.extend(dims)
     self.proto = proto
     self.params = {}
     self.conv = False
@@ -43,18 +36,19 @@ class Edge(object):
       node2.AddOutgoingEdge(self)
       node2.AddIncomingEdge(self)
 
-    self.LoadParams(tied_to=tied_to)
+    self.LoadParams(proto, t_op=t_op, tied_to=tied_to)
     self.marker = 0
     self.fig = visualize.GetFigId()
     self.fig_stats = visualize.GetFigId()
     if self.conv or self.local:
       self.conv_filter_fig = visualize.GetFigId()
-    self.num_shares = 1
-    self.num_grads_received = 0
+    self.AllocateMemory()
 
   def Show(self):
     if not self.hyperparams.enable_display:
       return
+    visualize.show_hist(self.params['weight'].asarray(), self.fig)
+    """
     if self.node1.is_input:
       if self.conv or self.local:
         visualize.display_convw(self.params['weight'].asarray(),
@@ -79,77 +73,24 @@ class Edge(object):
                                   self.proto.display_rows,
                                   self.proto.display_cols, self.fig,
                                   title=self.name)
-
-  def InitializeParameter(self, param):
-    if param.initialization == deepnet_pb2.Parameter.CONSTANT:
-      return np.zeros(tuple(param.dimensions)) + param.constant
-    elif param.initialization == deepnet_pb2.Parameter.DENSE_GAUSSIAN:
-      return param.sigma * np.random.randn(*tuple(param.dimensions))
-    elif param.initialization == deepnet_pb2.Parameter.DENSE_UNIFORM:
-      return param.sigma * (2 * np.random.rand(*tuple(param.dimensions)) - 1)
-    elif param.initialization == deepnet_pb2.Parameter.DENSE_GAUSSIAN_SQRT_FAN_IN:
-      if param.conv or param.local:
-        fan_in = np.prod(param.dimensions[0])
-      else:
-        fan_in = np.prod(param.dimensions[1])
-      stddev = param.sigma / np.sqrt(fan_in)
-      return stddev * np.random.randn(*tuple(param.dimensions))
-    elif param.initialization == deepnet_pb2.Parameter.DENSE_UNIFORM_SQRT_FAN_IN:
-      if param.conv or param.local:
-        fan_in = np.prod(param.dimensions[0])
-      else:
-        fan_in = np.prod(param.dimensions[1])
-      stddev = param.sigma / np.sqrt(fan_in)
-      return stddev * (2 * np.random.rand(*tuple(param.dimensions)) - 1)
-    elif param.initialization == deepnet_pb2.Parameter.PRETRAINED:
-      node1_name = param.pretrained_model_node1
-      node2_name = param.pretrained_model_node2
-      if node1_name == '':
-        node1_name = self.proto.node1
-      if node2_name == '':
-        node2_name = self.proto.node2
-
-      if param.transpose_pretrained:
-        temp = node1_name
-        node1_name = node2_name
-        node2_name = temp
-      mat = None
-      for pretrained_model in param.pretrained_model:
-        model_file = os.path.join(self.prefix, pretrained_model)
-        model = util.ReadModel(model_file)
-        edge = next(e for e in model.edge if e.node1 == node1_name and e.node2 == node2_name)
-        pretrained_param = next(p for p in edge.param if p.name == param.name)
-        assert pretrained_param.mat != '',\
-                'Pretrained param %s in edge %s:%s of model %s is empty!!' % (
-                  pretrained_param.name, edge.node1, edge.node2, pretrained_model)
-        if param.transpose_pretrained:
-          assert param.dimensions == pretrained_param.dimensions[::-1],\
-              'Param has shape %s but transposed pretrained param has shape %s' % (
-                param.dimensions, reversed(pretrained_param.dimensions))
-        else:
-          assert param.dimensions == pretrained_param.dimensions,\
-              'Param has shape %s but pretrained param has shape %s' % (
-                param.dimensions, pretrained_param.dimensions)
-        this_mat = util.ParameterAsNumpy(pretrained_param)
-        if param.transpose_pretrained:
-          this_mat = this_mat.T
-        if mat is None:
-          mat = this_mat
-        else:
-          mat += this_mat
-      return mat / len(param.pretrained_model)
-    else:
-      raise Exception('Unknown parameter initialization.')
-
-  def SaveParameters(self):
-    for param in self.proto.param:
-      param.mat = util.NumpyAsParameter(self.params[param.name].asarray())
+    """
 
   def AllocateBatchsizeDependentMemory(self):
     for param in self.proto.param:
       if param.conv or param.local:
         self.AllocateMemoryForConvolutions(param, self.node1, self.node2)
  
+  def AllocateMemory(self):
+    if 'weight' in self.params:
+      edge_shape = self.params['weight'].shape
+      self.temp = cm.CUDAMatrix(np.zeros(edge_shape))
+      self.gradient = cm.CUDAMatrix(np.zeros(edge_shape))
+      self.gradient_history = cm.CUDAMatrix(np.zeros(edge_shape))
+      t_op = self.t_op
+      if t_op and (t_op.optimizer == deepnet_pb2.Operation.PCD or \
+        t_op.optimizer == deepnet_pb2.Operation.CD):
+        self.suff_stats = cm.CUDAMatrix(np.zeros(edge_shape))
+
   def AllocateMemoryForConvolutions(self, param, node1, node2):
     self.conv = param.conv
     self.local = param.local
@@ -196,7 +137,7 @@ class Edge(object):
 
     return n_locs
 
-  def LoadParams(self, tied_to=None):
+  def LoadParams(self, proto, **kwargs):
     """Load the parameters for this edge.
 
     Load the parameters if present in self.proto. Otherwise initialize them
@@ -204,7 +145,6 @@ class Edge(object):
     """
     node1 = self.node1
     node2 = self.node2
-    proto = self.proto
     self.hyperparams = proto.hyperparams
     param_names = [param.name for param in proto.param]
     for param in proto.param:
@@ -220,32 +160,61 @@ class Edge(object):
           dims = [node1.numlabels * node1.dimensions,
                   node2.numlabels * node2.dimensions]
         param.dimensions.extend(dims)
-      if tied_to:
-        if self.transpose:
-          self.params[param.name] = tied_to.params[param.name].T
-        else:
-          self.params[param.name] = tied_to.params[param.name]
-        mat = self.params[param.name]
+    super(Edge, self).LoadParams(proto, **kwargs)
+
+  def LoadPretrained(self, param):
+    node1_name = param.pretrained_model_node1
+    node2_name = param.pretrained_model_node2
+    if node1_name == '':
+      node1_name = self.proto.node1
+    if node2_name == '':
+      node2_name = self.proto.node2
+
+    if param.transpose_pretrained:
+      temp = node1_name
+      node1_name = node2_name
+      node2_name = temp
+    mat = None
+    for pretrained_model in param.pretrained_model:
+      model_file = os.path.join(self.prefix, pretrained_model)
+      ext = os.path.splitext(pretrained_model)[1]
+      if ext == '.npz':
+        npzfile = np.load(model_file)
+        if param.name == 'bias':
+          this_mat = np.nan_to_num(npzfile['mean'] / npzfile['std'])
+        elif param.name == 'precision':
+          this_mat = np.nan_to_num(1. / npzfile['std'])
+      elif ext == '.npy':
+        this_mat = np.load(model_file)
       else:
-        if param.mat:  # and 'grad' not in param.name:
-          mat = util.ParameterAsNumpy(param)
+        model_file = os.path.join(self.prefix, pretrained_model)
+        model = util.ReadModel(model_file)
+        edge = next(e for e in model.edge if e.node1 == node1_name and e.node2 == node2_name)
+        pretrained_param = next(p for p in edge.param if p.name == param.name)
+        assert pretrained_param.mat != '',\
+                'Pretrained param %s in edge %s:%s of model %s is empty!!' % (
+                  pretrained_param.name, edge.node1, edge.node2, pretrained_model)
+        if param.transpose_pretrained:
+          assert param.dimensions == pretrained_param.dimensions[::-1],\
+              'Param has shape %s but transposed pretrained param has shape %s' % (
+                param.dimensions, reversed(pretrained_param.dimensions))
         else:
-          mat = self.InitializeParameter(param)
-        self.params[param.name] = cm.CUDAMatrix(mat)
-      if param.name == 'weight':
-        self.temp = cm.empty(mat.shape)
-        #self.temp2 = cm.empty(mat.shape)
-        self.gradient = cm.empty(mat.shape)
-        self.grad_weight = cm.empty(mat.shape)
-        self.gradient.assign(0)
-        self.grad_weight.assign(0)
-    if self.t_op and (self.t_op.optimizer == deepnet_pb2.Operation.PCD or \
-      self.t_op.optimizer == deepnet_pb2.Operation.CD):
-      self.suff_stats = cm.empty((self.node1.numlabels * self.node1.dimensions,
-                                  self.node2.numlabels * self.node2.dimensions))
+          assert param.dimensions == pretrained_param.dimensions,\
+              'Param has shape %s but pretrained param has shape %s' % (
+                param.dimensions, pretrained_param.dimensions)
+        this_mat = param.mult_factor * util.ParameterAsNumpy(pretrained_param)
+      if param.transpose_pretrained:
+        this_mat = this_mat.T
+      if mat is None:
+        mat = this_mat
+      else:
+        mat += this_mat
+    return mat / len(param.pretrained_model)
+
 
   def CollectSufficientStatistics(self, neg=False):
     logging.debug('Collecting suff stats %s', self.name)
+
     if self.node1.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
       self.node1.state.div_by_row(self.node1.NN)
     if self.node2.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:
@@ -254,14 +223,14 @@ class Edge(object):
       h1 = self.node1.hyperparams
       h2 = self.node2.hyperparams
       if h1.sparsity:
-        self.node1.state.add_col_mult(self.node1.means_temp, -1)
+        self.node1.state.add_col_mult(self.node1.sparsity_gradient, -1)
       if h2.sparsity:
-        self.node2.state.add_col_mult(self.node2.means_temp, -1)
+        self.node2.state.add_col_mult(self.node2.sparsity_gradient, -1)
       cm.dot(self.node1.state, self.node2.state.T, target=self.suff_stats)
       if h1.sparsity:
-        self.node1.state.add_col_vec(self.node1.means_temp)
+        self.node1.state.add_col_vec(self.node1.sparsity_gradient)
       if h2.sparsity:
-        self.node2.state.add_col_vec(self.node2.means_temp)
+        self.node2.state.add_col_vec(self.node2.sparsity_gradient)
     else:
       self.suff_stats.add_dot(self.node1.state, self.node2.state.T, mult=-1.0)
     if self.node1.activation == deepnet_pb2.Hyperparams.REPLICATED_SOFTMAX:

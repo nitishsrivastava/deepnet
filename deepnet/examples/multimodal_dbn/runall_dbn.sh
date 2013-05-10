@@ -52,7 +52,7 @@ if ${clobber} || [ ! -e ${model_output_dir}/image_rbm1_LAST ]; then
     trainers/dbn/train_CD_image_layer1.pbtxt eval.pbtxt || exit 1
   python ${extract_rep} ${model_output_dir}/image_rbm1_LAST \
     trainers/dbn/train_CD_image_layer1.pbtxt image_hidden1 \
-    ${data_output_dir}/image_rbm1_LAST ${gpu_mem} ${cpu_mem} || exit 1
+    ${data_output_dir}/image_rbm1_LAST ${gpu_mem} ${main_mem} || exit 1
 fi
 
 # IMAGE LAYER - 2.
@@ -62,7 +62,7 @@ if ${clobber} || [ ! -e ${model_output_dir}/image_rbm2_LAST ]; then
     trainers/dbn/train_CD_image_layer2.pbtxt eval.pbtxt || exit 1
   python ${extract_rep} ${model_output_dir}/image_rbm2_LAST \
     trainers/dbn/train_CD_image_layer2.pbtxt image_hidden2 \
-    ${data_output_dir}/image_rbm2_LAST ${gpu_mem} ${cpu_mem} || exit 1
+    ${data_output_dir}/image_rbm2_LAST ${gpu_mem} ${main_mem} || exit 1
 fi
 
 # EXTRACT IMAGE REPRESENTATIONS CORRESPONDING TO DATA WITH NON-ZERO TEXT.
@@ -87,7 +87,7 @@ if ${clobber} || [ ! -e ${model_output_dir}/text_rbm1_LAST ]; then
     trainers/dbn/train_CD_text_layer1.pbtxt eval.pbtxt || exit 1
   python ${extract_rep} ${model_output_dir}/text_rbm1_LAST \
     trainers/dbn/train_CD_text_layer1.pbtxt text_hidden1 \
-    ${data_output_dir}/text_rbm1_LAST ${gpu_mem} ${cpu_mem} || exit 1
+    ${data_output_dir}/text_rbm1_LAST ${gpu_mem} ${main_mem} || exit 1
 fi
 
 # TEXT LAYER - 2.
@@ -97,7 +97,7 @@ if ${clobber} || [ ! -e ${model_output_dir}/text_rbm2_LAST ]; then
     trainers/dbn/train_CD_text_layer2.pbtxt eval.pbtxt || exit 1
   python ${extract_rep} ${model_output_dir}/text_rbm2_LAST \
     trainers/dbn/train_CD_text_layer2.pbtxt text_hidden2 \
-    ${data_output_dir}/text_rbm2_LAST ${gpu_mem} ${cpu_mem} || exit 1
+    ${data_output_dir}/text_rbm2_LAST ${gpu_mem} ${main_mem} || exit 1
 fi
 #)&
 #wait;
@@ -118,7 +118,7 @@ if ${clobber} || [ ! -e ${model_output_dir}/joint_rbm_LAST ]; then
     trainers/dbn/train_CD_joint_layer.pbtxt eval.pbtxt || exit 1
   python ${extract_rep} ${model_output_dir}/joint_rbm_LAST \
     trainers/dbn/train_CD_joint_layer.pbtxt joint_hidden \
-    ${data_output_dir}/joint_rbm_LAST ${gpu_mem} ${cpu_mem} || exit 1
+    ${data_output_dir}/joint_rbm_LAST ${gpu_mem} ${main_mem} || exit 1
 fi
 
 # INFER TEXT PATHWAY CONDITIONED ON IMAGES.

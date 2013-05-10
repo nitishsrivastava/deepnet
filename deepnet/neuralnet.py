@@ -17,6 +17,8 @@ from smooth_relu_layer import *
 from linear_layer import *
 from softmax_layer import *
 from replicated_softmax_layer import *
+from cos_layer import *
+from sin_layer import *
 
 class NeuralNet(object):
 
@@ -73,20 +75,24 @@ class NeuralNet(object):
         batchsize=self.e_op.batchsize
 
     for layer in self.net.layer:
-      hyp = deepnet_pb2.Hyperparams()
-      hyp.CopyFrom(self.net.hyperparams)
-      hyp.MergeFrom(layer.hyperparams)
-      layer.hyperparams.MergeFrom(hyp)
+      layer.hyperparams.MergeFrom(LoadMissing(layer.hyperparams,
+                                              self.net.hyperparams))
       if not layer.prefix:
         layer.prefix = self.net.prefix
-      self.layer.append(CreateLayer(Layer, layer, self.t_op))
+      tied_to = None
+      if layer.tied:
+        tied_to = next(l for l in self.layer if l.name == layer.tied_to)
+      self.layer.append(CreateLayer(Layer, layer, self.t_op, tied_to=tied_to))
 
     for edge in self.net.edge:
       hyp = deepnet_pb2.Hyperparams()
       hyp.CopyFrom(self.net.hyperparams)
       hyp.MergeFrom(edge.hyperparams)
       edge.hyperparams.MergeFrom(hyp)
-      node1 = next(layer for layer in self.layer if layer.name == edge.node1)
+      try:
+        node1 = next(layer for layer in self.layer if layer.name == edge.node1)
+      except StopIteration:
+        print edge.node1, [l.name for l in self.layer]
       node2 = next(layer for layer in self.layer if layer.name == edge.node2)
       if not edge.prefix:
         edge.prefix = self.net.prefix
@@ -209,7 +215,8 @@ class NeuralNet(object):
     else:
       loss = None
       if layer.hyperparams.sparsity:
-        layer.AddSparsityGradient()
+        sparsity_gradient = layer.GetSparsityGradient()
+        layer.deriv.add_col_vec(sparsity_gradient)
       layer.ComputeDeriv()
     # Now layer.deriv contains the derivative w.r.t to the inputs.
     # Send it down each incoming edge and update parameters on the edge.
@@ -261,50 +268,23 @@ class NeuralNet(object):
       edge.gradient.assign(0)
       edge = edge.tied_to
     edge.num_grads_received += 1
-    gradient = edge.gradient
     if edge.num_grads_received == edge.num_shares:
-      h = edge.hyperparams
-      momentum, epsilon = GetMomentumAndEpsilon(edge.hyperparams, step)
-      w_delta = edge.grad_weight
-      w = edge.params['weight']
-      if h.adapt == deepnet_pb2.Hyperparams.NONE:
-        w_delta.mult(momentum)
-        if h.apply_l2_decay:
-          w_delta.add_mult(w, h.l2_decay)
-        if h.apply_l1_decay and step > h.apply_l1decay_after:
-          w.sign(target=edge.temp)
-          w_delta.add_mult(edge.temp, h.l1_decay)
-      else:
-        raise Exception('Not implemented.')
-      w_delta.add(gradient)
-      w.add_mult(w_delta, -epsilon)
-      edge.num_grads_received = 0
-      gradient.assign(0)
-      if h.apply_weight_norm:
-        w.norm_limit(h.weight_norm, axis=0)
+      edge.Update('weight', step)
 
   def UpdateLayerParams(self, layer, step):
     """ Update the parameters associated with this layer.
-
     Update the bias.
     Args:
       step: Training step.
     """
-    h = layer.hyperparams
-    deriv = layer.deriv
-    momentum, epsilon = GetMomentumAndEpsilon(layer.hyperparams, step)
-    b_delta = layer.grad_bias
-    b = layer.params['bias']
-
-    # Update bias.
-    b_delta.mult(momentum)
-    b_delta.add_sums(deriv, axis=1, mult = 1.0 / layer.batchsize)
-    #if h.apply_l2_decay:
-    #  b_delta.add_mult(b, h.l2_decay)
-    #if h.apply_l1_decay and step > h.apply_l1decay_after:
-    #  b.sign(target=layer.dimsize)
-    #  b_delta.add_mult(layer.dimsize, h.l1_decay)
-    b.add_mult(b_delta, -epsilon)
+    layer.gradient.add_sums(layer.deriv, axis=1, mult = 1.0 / layer.batchsize)
+    if layer.tied_to:
+      layer.tied_to.gradient.add(layer.gradient)
+      layer.gradient.assign(0)
+      layer = layer.tied_to
+    layer.num_grads_received += 1
+    if layer.num_grads_received == layer.num_shares:
+      layer.Update('bias', step, no_reg=True)  # By default, do not regularize bias.
 
   def ForwardPropagate(self, train=False, step=0):
     """Do a forward pass through the network.
@@ -650,6 +630,8 @@ class NeuralNet(object):
       else:
         stats = losses
       step += 1
+      if self.ShowNow(step):
+        self.Show()
       if self.EvalNow(step):
         # Print out training stats.
         sys.stdout.write('\rStep %d ' % step)
@@ -663,7 +645,10 @@ class NeuralNet(object):
         self.Evaluate(validation=False, collect_predictions=collect_predictions)
         if select_best:
           valid_stat = self.net.validation_stats[-1]
-          test_stat = self.net.test_stats[-1]
+          if len(self.net.test_stats) > 1:
+            test_stat = self.net.test_stats[-1]
+          else:
+            test_stat = valid_stat
           if select_model_using_error:
             valid_error = valid_stat.error / valid_stat.count
             _test_error = test_stat.error / test_stat.count
@@ -684,9 +669,9 @@ class NeuralNet(object):
             self.net.test_stat_es.CopyFrom(test_stat)
             best_net = self.DeepCopy()
             best_t_op = CopyOperation(self.t_op)
+        #for e in self.edge:
+        #  sys.stdout.write(' %s %.3f' % (e.name, e.params['weight'].euclid_norm()))
         sys.stdout.write('\n')
-      if self.ShowNow(step):
-        self.Show()
       if self.SaveNow(step):
         self.t_op.current_step = step
         self.CopyModelToCPU()
