@@ -124,11 +124,15 @@ class Edge(Parameter):
       pool_size = param.conv_params.pool_size
       pool_stride = param.conv_params.pool_stride
       n_pool_locs = (n_locs - pool_size) / pool_stride + 1
-      assert output_shape[1] == n_pool_locs**2 * num_filters
+      assert output_shape[1] == n_pool_locs**2 * num_filters, (
+        "%s expected %s outputs, got %s" % (
+          self.name, n_pool_locs**2 * num_filters, output_shape[1]))
       if param.conv_params.prob:
         self.rnd = cm.empty(self.unpooled_layer.shape)
     else:
-      assert output_shape[1] == n_locs**2 * num_filters
+      assert output_shape[1] == n_locs**2 * num_filters, (
+        "%s expected %s outputs, got %s" % (
+          self.name, n_locs**2 * num_filters, output_shape[1]))
     if param.conv_params.rnorm:
       self.unrnormalized_layer = cm.empty(output_shape)
       self.denoms = cm.empty(output_shape)
