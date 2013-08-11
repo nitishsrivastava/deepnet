@@ -187,9 +187,12 @@ class Edge(Parameter):
       elif ext == '.npy':
         this_mat = np.load(model_file)
       else:
-        model_file = os.path.join(self.prefix, pretrained_model)
         model = util.ReadModel(model_file)
-        edge = next(e for e in model.edge if e.node1 == node1_name and e.node2 == node2_name)
+        try:
+          edge = next(e for e in model.edge if e.node1 == node1_name and e.node2 == node2_name)
+        except StopIteration as e:
+          print 'No edge found between %s and %s in model %s.' % (node1_name, node2_name, model_file)
+          raise e
         pretrained_param = next(p for p in edge.param if p.name == param.name)
         assert pretrained_param.mat != '',\
                 'Pretrained param %s in edge %s:%s of model %s is empty!!' % (

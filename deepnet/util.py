@@ -150,6 +150,13 @@ def CreateLayer(layer_class, proto, *args, **kwargs):
       return l
   return None
 
+def CreateEdge(edge_class, proto, *args, **kwargs):
+  for cls in edge_class.__subclasses__():
+    if cls.IsEdgeType(proto):
+      return cls(proto, *args, **kwargs)
+  return edge_class(proto, *args, **kwargs)
+
+
 def LoadMissing(p1, p2):
   p = p1.__class__()
   p.CopyFrom(p2)

@@ -239,7 +239,7 @@ class DBM(NeuralNet):
 
   def UpdateLayerParams(self, layer, step=0):
     """Update parameters associated with this layer."""
-    layer.gradient.add_mult(layer.suff_stats, alpha=-1.0 / layer.batchsize)
+    layer.gradient.add_mult(layer.suff_stats, -1.0 / layer.batchsize)
     if layer.tied_to:
       layer.tied_to.gradient.add(layer.gradient)
       layer.gradient.assign(0)
@@ -251,7 +251,7 @@ class DBM(NeuralNet):
   def UpdateEdgeParams(self, edge, step):
     """ Update the parameters associated with this edge."""
     numcases = edge.node1.batchsize
-    edge.gradient.add_mult(edge.suff_stats, alpha=-1.0/numcases)
+    edge.gradient.add_mult(edge.suff_stats, -1.0/numcases)
     if edge.tied_to:
       edge.tied_to.gradient.add(edge.gradient)
       edge.gradient.assign(0)

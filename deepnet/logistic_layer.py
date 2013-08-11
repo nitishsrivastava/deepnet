@@ -35,25 +35,16 @@ class LogisticLayer(Layer):
       data = self.data
       state = self.state
       temp1 = self.statesize
-      temp2 = self.dimsize
-      unitcell = self.unitcell
 
       cm.cross_entropy_bernoulli(data, state, target=temp1, tiny=self.tiny)
-      temp1.sum(axis=1, target=temp2)
-      temp2.sum(axis=0, target=unitcell)
-      cross_entropy = unitcell.euclid_norm()
-
+      perf.cross_entropy = temp1.sum()
+   
       cm.correct_preds(data, state, target=temp1, cutoff=0.5)
-      temp1.sum(axis=1, target=temp2)
-      temp2.sum(axis=0, target=unitcell)
-      correct_preds = unitcell.euclid_norm()
+      perf.correct_preds = temp1.sum()
 
       if get_deriv:
         self.state.subtract(self.data, target=self.deriv)
 
-      perf.cross_entropy = cross_entropy
-      perf.correct_preds = correct_preds
-   
     elif self.loss_function == deepnet_pb2.Layer.SQUARED_LOSS:
       target = self.statesize
       self.state.subtract(self.data, target=target)

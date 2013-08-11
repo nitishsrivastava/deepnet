@@ -6,7 +6,7 @@ import os.path
 import util
 import visualize
 import pdb
-from cudamat_conv import cudamat_conv2 as cc
+from cudamat import cudamat_conv as cc
 
 class Parameter(object):
 
@@ -72,6 +72,12 @@ class Parameter(object):
   def LoadPretrained(self, param):
     pass
 
+  def GetGlobalInfo(self, net):
+    pass
+
+  def ApplyL2Decay(self, w_delta, w, lambdaa, **kwargs):
+    w_delta.add_mult(w, lambdaa)
+
   def Update(self, param_name, step, no_reg=False):
     h = self.hyperparams
     momentum, epsilon = self.GetMomentumAndEpsilon(step)
@@ -84,10 +90,9 @@ class Parameter(object):
     if h.adapt == deepnet_pb2.Hyperparams.NONE:
       w_delta.mult(momentum)
       if not no_reg and h.apply_l2_decay:
-        w_delta.add_mult(w, h.l2_decay)
+        self.ApplyL2Decay(w_delta, w, h.l2_decay, step=step, eps=epsilon, mom=momentum)
       if not no_reg and h.apply_l1_decay and step > h.apply_l1decay_after:
-        w.sign(target=self.temp)
-        w_delta.add_mult(self.temp, h.l1_decay)
+        w_delta.add_mult_sign(w, h.l1_decay)
     else:
       raise Exception('Not implemented.')
     w_delta.add_mult(gradient)

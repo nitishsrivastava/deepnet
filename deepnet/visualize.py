@@ -14,6 +14,20 @@ def show_model_state(model, step):
     display_w(node.sample.asarray(), dims, 10, 10, i, title=node.name)
 
 
+def show(mat, fig=1, title=''):
+  plt.figure(fig)
+  plt.clf()
+  plt.imshow(mat, interpolation='nearest')
+  plt.suptitle(title)
+  plt.colorbar()
+  plt.draw()
+
+def scatter(Y, s=20, c='b', fig=1):
+  plt.figure(fig)
+  plt.clf()
+  plt.scatter(Y[:,0], Y[:,1], s, c)
+  plt.draw()
+
 def show_hist(mat, fig):
   plt.figure(fig)
   plt.clf()

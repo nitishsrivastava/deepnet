@@ -9,14 +9,7 @@ class SoftmaxLayer(Layer):
     return proto.hyperparams.activation == deepnet_pb2.Hyperparams.SOFTMAX
 
   def ApplyActivation(self):
-    state = self.state
-    temp = self.batchsize_temp
-
-    state.max(axis=0, target=temp)
-    state.add_row_mult(temp, -1)
-    cm.exp(state)
-    state.sum(axis=0, target=temp)
-    state.div_by_row(temp)
+    self.state.apply_softmax()
 
   def Sample(self):
     self.state.perturb_prob_for_softmax_sampling(target=self.sample)
@@ -37,13 +30,6 @@ class SoftmaxLayer(Layer):
     self.data = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
     self.deriv = cm.CUDAMatrix(np.zeros((numlabels*dimensions, batchsize)))
     self.batchsize_temp = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
-    if self.loss_function == deepnet_pb2.Layer.CROSS_ENTROPY:
-      self.temp2 = cm.CUDAMatrix(np.zeros((dimensions, batchsize)))
-      self.indices = cm.CUDAMatrix(np.zeros((1, dimensions * batchsize)))
-      self.rowshift = cm.CUDAMatrix(
-        numlabels*np.arange(dimensions * batchsize).reshape(1, -1))
-    elif self.loss_function == deepnet_pb2.Layer.SQUARED_LOSS:
-      self.expanded_batch = cm.CUDAMatrix(np.zeros((numlabels * dimensions, batchsize)))
 
   def GetData(self):
     self.expansion_matrix.select_columns(self.data, target=self.state)
@@ -61,49 +47,44 @@ class SoftmaxLayer(Layer):
     perf.MergeFrom(self.proto.performance_stats)
     perf.count = self.batchsize
     tiny = self.tiny
-    if self.loss_function == deepnet_pb2.Layer.CROSS_ENTROPY:
-      temp2 = self.temp2
-      temp = self.batchsize_temp
-      batchsize = self.batchsize
-      dimensions = self.dimensions
-      numlabels = self.numlabels
-      state = self.state
-      data = self.data
-      unitcell = self.unitcell
-      indices = self.indices
+    batchsize = self.batchsize
+    dimensions = self.dimensions
+    numlabels = self.numlabels
+    state = self.state
+    data = self.data
 
-      # Optimized for space to handle large number of labels in a softmax.
-      data.reshape((1, batchsize * dimensions))
-      data.add(self.rowshift, target=indices)
-      state.reshape((numlabels, dimensions * batchsize))
-      state.max(axis=0, target=temp2)
-      state.reshape((1, batchsize * numlabels * dimensions))
-      state.select_columns(indices, temp)
-      temp2.subtract(temp)
-      temp2.sign(target=temp2)
-      temp2.sum(axis=1, target=unitcell)
-      correct_preds = batchsize - unitcell.euclid_norm()
+    # Reshape to make each softmax be one column.
+    state.reshape((numlabels, dimensions * batchsize))
+    data.reshape((1, dimensions * batchsize))
+
+    if self.loss_function == deepnet_pb2.Layer.CROSS_ENTROPY:
+      temp = self.batchsize_temp
+      
+      # Compute correct predictions.
+      state.get_softmax_correct(data, target=temp)
+      perf.correct_preds = temp.sum()
+
+      # Compute cross entropy.
+      state.get_softmax_cross_entropy(data, target=temp, tiny=tiny)
+      perf.cross_entropy = temp.sum()
+
+      # Compute derivative.
       if get_deriv:
-        temp.subtract(1, target=temp2)
-        state.set_selected_columns(indices, temp2)
-        state.reshape((numlabels * dimensions, batchsize))
-        self.deriv.assign(self.state)
-      state.reshape((numlabels * dimensions, batchsize))
-      temp.add(tiny)
-      cm.log(temp)
-      temp.sum(axis=1, target=unitcell)
-      cross_entropy = unitcell.euclid_norm()
-      perf.cross_entropy = cross_entropy
-      perf.correct_preds = correct_preds
+        state.apply_softmax_grad(data, target=self.deriv)
+
     elif self.loss_function == deepnet_pb2.Layer.SQUARED_LOSS:
-      self.expansion_matrix.select_columns(self.data, target=self.expanded_batch)
-      self.state.subtract(self.expanded_batch, target=self.deriv)
+      state.apply_softmax_grad(data, target=self.deriv)
       error = self.deriv.euclid_norm()**2
       perf.error = error
     else:
       raise Exception('Unknown loss function for Softmax units.')
+    
+    # Restore shapes.
+    state.reshape((numlabels * dimensions, batchsize))
+    data.reshape((dimensions, batchsize))
+    
     return perf
 
   def GetSparsityDivisor(self):
-    raise Exception('Sparsity not implemented for replicated softmax units.')
+    raise Exception('Sparsity not implemented for softmax units.')
 

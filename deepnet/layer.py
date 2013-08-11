@@ -1,6 +1,5 @@
 """Implements a layer of neurons."""
 from parameter import *
-
 import matplotlib.pyplot as plt
 plt.ion()
 class Layer(Parameter):
@@ -144,7 +143,7 @@ class Layer(Parameter):
     # Update \hat{\rho}.
     self.means.mult(damping)
     self.means.add_sums(self.state, axis=1, mult=(1-damping)/self.batchsize)
-    #pdb.set_trace()
+    
     # Compute gradient.
     self.means.subtract(target, target=self.sparsity_gradient)
     div = self.GetSparsityDivisor()
@@ -153,12 +152,6 @@ class Layer(Parameter):
 
     # Return gradient.
     return self.sparsity_gradient
-    """
-    if self.use_suff_stats:
-      self.suff_stats.add_mult(self.sparsity_gradient, alpha=-self.batchsize)
-    else:
-      self.deriv.add_col_vec(self.sparsity_gradient)
-    """
 
   def AllocateMemory(self, batchsize):
     self.AllocateBatchsizeDependentMemory(batchsize)
@@ -166,7 +159,6 @@ class Layer(Parameter):
     numlabels = self.numlabels
     numdims = dimensions * numlabels
     self.dimsize = cm.CUDAMatrix(np.zeros((numdims, 1)))
-    self.unitcell = cm.CUDAMatrix(np.zeros((1,1)))
     if self.hyperparams.sparsity:
       tgt = self.hyperparams.sparsity_target
       self.means = cm.CUDAMatrix(tgt + np.zeros((numdims, 1)))
@@ -213,11 +205,11 @@ class Layer(Parameter):
       self.state.sum(axis=1, target=self.suff_stats)
       if h.sparsity:
         sparsity_gradient = self.GetSparsityGradient()
-        self.suff_stats.add_mult(sparsity_gradient, alpha=-self.batchsize)
+        self.suff_stats.add_mult(sparsity_gradient, -self.batchsize)
     else:
       self.suff_stats.add_sums(self.state, axis=1, mult=-1.0)
     if not neg and h.sparsity:
-      return float(self.means.asarray().mean())
+      return self.means.sum()/self.means.shape[0]
 
   def Show(self, train=False):
     """Displays useful statistics about the model."""

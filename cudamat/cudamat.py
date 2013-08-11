@@ -248,11 +248,16 @@ class CUDAMatrix(object):
         Reshapes self to have the given shape. The number of elements cannot
         change as this only changes how the contents are interpreted.
         """
+        m, n = shape
+        mlen = self.shape[0] * self.shape[1]
+        if m == -1:
+          assert n > 0 and mlen % n == 0
+          m = mlen / n
+        elif n == -1:
+          assert m > 0 and mlen % m == 0
+          n = mlen / m
 
-        m = ct.c_uint(shape[0])
-        n = ct.c_uint(shape[1])
-
-        err_code = _cudamat.reshape(self.p_mat, m, n)
+        err_code = _cudamat.reshape(self.p_mat, ct.c_uint(m), ct.c_uint(n))
         if err_code:
             raise generate_exception(err_code)
 
@@ -704,14 +709,17 @@ class CUDAMatrix(object):
 
         return target
  
-    def sum(self, axis, target = None):
+    def sum(self, axis=None, target = None):
         """
         Sum the matrix along the given dimension, where 0 represents the leading
-        dimension and 1 represents the non-leading dimension. If a target is
-        not prvided, a new vector is created for storing the result.
+        dimension and 1 represents the non-leading dimension. If None, the sum
+        of all elements is returned. If a target is not prvided, a new vector is
+        created for storing the result.
         """
-
-        return sum(self, axis, target)
+        if axis is None:
+          return vdot(self, CUDAMatrix.ones.slice(0, self.shape[0]*self.shape[1]))
+        else:
+          return sum(self, axis, target)
 
     def add_sums(self, mat, axis, mult = 1.):
         """
@@ -739,6 +747,24 @@ class CUDAMatrix(object):
 
         return self
 
+    def less_than_eq(self, val, target = None):
+        """
+        Perform the operation target = 1. * (self < val), where val can be a matrix or a scalar.
+        """
+
+        if not target:
+            target = self
+
+        if isinstance(val, (int, float)):
+            err_code = _cudamat.less_than_eq_scalar(self.p_mat, ct.c_float(val), target.p_mat)
+        else:
+            err_code = _cudamat.less_than_eq(self.p_mat, val.p_mat, target.p_mat)
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
     def less_than(self, val, target = None):
         """
         Perform the operation target = 1. * (self < val), where val can be a matrix or a scalar.
@@ -751,6 +777,24 @@ class CUDAMatrix(object):
             err_code = _cudamat.less_than_scalar(self.p_mat, ct.c_float(val), target.p_mat)
         else:
             err_code = _cudamat.less_than(self.p_mat, val.p_mat, target.p_mat)
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+    def greater_than_eq(self, val, target = None):
+        """
+        Perform the operation target = 1. * (self > val), where val can be a matrix or a scalar.
+        """
+
+        if not target:
+            target = self
+
+        if isinstance(val, (int, float)):
+            err_code = _cudamat.greater_than_eq_scalar(self.p_mat, ct.c_float(val), target.p_mat)
+        else:
+            err_code = _cudamat.greater_than_eq(self.p_mat, val.p_mat, target.p_mat)
 
         if err_code:
             raise generate_exception(err_code)
@@ -915,6 +959,22 @@ class CUDAMatrix(object):
 
         return target
 
+    def add_sqsums(self, mat, axis, mult = 1.):
+        """
+        Add the sum of squares of mat along the given dimension to self. 0 represents the
+        leading dimension and 1 represents the non-leading dimension.
+        """
+        m, n = mat.shape
+        if axis == 0:
+          assert self.shape == (1, n), 'Self has shape %s but mat has shape %s' % (self.shape, mat.shape)
+        elif axis == 1:
+          assert self.shape == (m, 1)
+
+        err_code =  _cudamat.sqsum_by_axis(mat.p_mat, self.p_mat,
+                                           ct.c_int(axis), ct.c_float(mult),
+                                           ct.c_float(1.0))
+        if err_code:
+            raise generate_exception(err_code)
 
     def sqsum(self, axis, target = None):
         """
@@ -933,7 +993,7 @@ class CUDAMatrix(object):
             if not target:
                 target = empty((m, 1))
 
-        err_code =  _cudamat.sqsum_by_axis(self.p_mat, target.p_mat, ct.c_int(axis))
+        err_code =  _cudamat.sqsum_by_axis(self.p_mat, target.p_mat, ct.c_int(axis), 1.0, 0.0)
         if err_code:
             raise generate_exception(err_code)
 
@@ -947,20 +1007,22 @@ class CUDAMatrix(object):
         """
         m, n = self.shape
 
-        if axis == 0:
-            if not target:
-                target = self
+        if not target:
+            target = self
  
-        elif axis == 1:
-            if not target:
-                target = self
-
         err_code =  _cudamat.normlimit_by_axis(self.p_mat, target.p_mat,
                                                ct.c_int(axis), ct.c_float(norm))
         if err_code:
             raise generate_exception(err_code)
 
         return target
+
+
+    def apply_softmax(self, target = None):
+        """
+        Apply the softmax activation function.
+        """
+        return softmax(self, target)
 
     def sign(self, target = None):
         """
@@ -1040,23 +1102,34 @@ class CUDAMatrix(object):
 
         return self
 
-    def add_mult(self, mat2, alpha = 1.):
+    def add_mult_sign(self, mat2, mult = 1.):
+        """
+        Add multiple of sign of mat2 to the matrix.
+        """
+
+        err_code = _cudamat.add_mult_sign(self.p_mat, mat2.p_mat, ct.c_float(mult))
+        if err_code:
+            raise generate_exception(err_code)
+
+        return self
+
+    def add_mult(self, mat2, mult = 1.):
         """
         Add multiple of mat2 to the matrix.
         """
 
-        err_code = _cudamat.add_mult(self.p_mat, mat2.p_mat, ct.c_float(alpha))
+        err_code = _cudamat.add_mult(self.p_mat, mat2.p_mat, ct.c_float(mult))
         if err_code:
             raise generate_exception(err_code)
 
         return self
     
-    def subtract_mult(self, mat2, alpha = 1.):
+    def subtract_mult(self, mat2, mult = 1.):
         """
         Subtract a multiple of mat2 from the matrix.
         """
 
-        err_code = _cudamat.add_mult(self.p_mat, mat2.p_mat, ct.c_float(-1. * alpha))
+        err_code = _cudamat.add_mult(self.p_mat, mat2.p_mat, ct.c_float(-1. * mult))
         if err_code:
             raise generate_exception(err_code)
 
@@ -1073,6 +1146,42 @@ class CUDAMatrix(object):
             err_code = _cudamat.add_elementwise(self.p_mat, val.p_mat, target.p_mat)
         elif isinstance(val, (int, float)):
             err_code = _cudamat.add_scalar(self.p_mat, ct.c_float(val), target.p_mat)
+        else:
+            raise ValueError, "Value must be of type CUDAMatrix, int, or float."
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+    def accumulate_columns(self, indices, target, mult=1.0, avg=False):
+        if not target:
+            target = self
+        if avg:
+          avgg = 1
+        else:
+          avgg = 0
+        err_code = _cudamat.accumulate_columns(self.p_mat, indices.p_mat, target.p_mat, ct.c_float(mult), ct.c_int(avgg))
+        if err_code:
+            raise generate_exception(err_code)
+        return target
+
+    def expand(self, expansion_indices, target):
+
+        err_code = _cudamat.expand(self.p_mat, expansion_indices.p_mat, target.p_mat)
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+    def expand_and_add(self, val, expansion_indices, target = None, mult=1.0):
+
+        if not target:
+            target = self
+
+        if isinstance(val, CUDAMatrix) and isinstance(expansion_indices, CUDAMatrix):
+            err_code = _cudamat.expand_and_add(self.p_mat, val.p_mat, expansion_indices.p_mat, target.p_mat, ct.c_float(mult))
         else:
             raise ValueError, "Value must be of type CUDAMatrix, int, or float."
 
@@ -1169,6 +1278,59 @@ class CUDAMatrix(object):
             err_code = _cudamat.apply_sin_deriv(self.p_mat, val.p_mat, target.p_mat)
         else:
             raise ValueError, "Value must be of type CUDAMatrix."
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+    def get_softmax_correct(self, labels, target):
+        """
+        target[i] = 1, iff labels[i] is correctly predicted; 0 otherwise.
+        """
+        assert labels.shape == (1, self.shape[1])
+        assert target.shape == labels.shape
+        if isinstance(labels, CUDAMatrix):
+            err_code = _cudamat.get_softmax_correct(self.p_mat, labels.p_mat, target.p_mat)
+        else:
+            raise ValueError, "labels must be of type CUDAMatrix."
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+    def get_softmax_cross_entropy(self, labels, target, tiny=1e-10):
+        """
+        target[i] = -log(self[label[i]]).
+        """
+        assert labels.shape == (1, self.shape[1])
+        assert target.shape == labels.shape
+        if isinstance(labels, CUDAMatrix):
+            err_code = _cudamat.get_softmax_cross_entropy(self.p_mat, labels.p_mat, target.p_mat, ct.c_float(tiny))
+        else:
+            raise ValueError, "labels must be of type CUDAMatrix."
+
+        if err_code:
+            raise generate_exception(err_code)
+
+        return target
+
+
+
+    def apply_softmax_grad(self, labels, target = None):
+        """
+        Apply logistic derivative, where val is the activation of logistic units.
+        """
+        if not target:
+            target = self
+
+        assert labels.shape == (1, self.shape[1])
+        assert target.shape == self.shape
+        if isinstance(labels, CUDAMatrix):
+            err_code = _cudamat.apply_softmax_grad(self.p_mat, labels.p_mat, target.p_mat)
+        else:
+            raise ValueError, "labels must be of type CUDAMatrix."
 
         if err_code:
             raise generate_exception(err_code)
@@ -1306,15 +1468,6 @@ class CUDAMatrix(object):
 
         return target
 
-    def sum_all(self):
-        err_code = ct.c_int(0)
-        res = _cudamat.sum_all(self.p_mat)
-
-        if err_code:
-            raise generate_exception(err_code.value, ct.byref(err_code))
-
-        return res
-
     def euclid_norm(self):
         err_code = ct.c_int(0)
         res = _cudamat.euclid_norm(self.p_mat, ct.byref(err_code))
@@ -1353,7 +1506,7 @@ class CUDAMatrix(object):
         This does bounds checking, but out of bounds indices do not raise an exception (because the programmer was lazy). Instead, they result in NaN values in <target>.
         """
         assert indices1.shape == indices2.shape
-        err_code = _cudamat.swapRows(self.p_mat, target.p_mat, indices1.p_mat, indices2.p_mat)
+        err_code = _cudamat.swapColumns(self.p_mat, target.p_mat, indices1.p_mat, indices2.p_mat)
 
         if err_code:
             raise generate_exception(err_code)
@@ -1454,6 +1607,20 @@ def vdot(m1, m2):
         raise generate_exception(err_code.value)
 
     return res
+
+def softmax(mat, target = None):
+    """
+    Apply cos to each element of the matrix mat.
+    """
+
+    if target:
+      err_code = _cudamat.softmax(mat.p_mat, target.p_mat)
+    else:
+      err_code = _cudamat.softmax_overwrite(mat.p_mat)
+      target = mat
+    if err_code:
+        raise generate_exception(err_code)
+    return target
 
 def cos(mat, target = None):
     """

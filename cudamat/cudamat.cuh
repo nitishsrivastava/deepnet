@@ -8,6 +8,16 @@
 #define ERROR_NOT_ON_DEVICE -8
 #define ERROR_UNSUPPORTED -9
 
+#ifndef DIVUP
+#define DIVUP(x, y) (((x) + (y) - 1) / (y))
+#endif
+#ifndef MIN
+#define MIN(x,y) ((x < y) ? x : y)
+#endif
+#ifndef MAX
+#define MAX(x,y) ((x > y) ? x : y)
+#endif
+
 struct cudamat {
     float* data_host;
     float* data_device;

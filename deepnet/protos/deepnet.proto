@@ -169,6 +169,13 @@ message Hyperparams {
 
   optional bool fast_dropout = 57 [default=false];
   optional float fast_dropout_cost = 58 [default=0];
+
+  optional bool shared_prior = 59 [default=false];
+  optional string shared_prior_file = 60;
+  optional string shared_prior_edge = 61;
+  optional float shared_prior_cost = 62 [default=0.0];
+  optional bool soft_shared_prior = 63 [default=false];
+  optional string label_freq_file = 64;
 }
 
 message Edge {
@@ -187,6 +194,7 @@ message Edge {
   optional string tied_to_node1 = 13;
   optional string tied_to_node2 = 14;
   optional bool tied_transpose = 15[default=false];
+  optional bool block_gradient = 16 [default=false];
 }
 
 message Model {

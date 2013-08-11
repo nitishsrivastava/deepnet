@@ -39,8 +39,11 @@ class DataViewer(object):
 
   def Get(self):
     datachunk = self.cpu_cache.Get(self.batchsize)[0]
-    if 'sparse' in datachunk.__module__:
-      datachunk = datachunk.toarray()
+    try:
+      if 'sparse' in datachunk.__module__:
+        datachunk = datachunk.toarray()
+    except Exception as e:
+      pass
     return datachunk
 
   def ComputeStats(self):

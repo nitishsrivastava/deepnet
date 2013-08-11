@@ -19,6 +19,8 @@ from softmax_layer import *
 from replicated_softmax_layer import *
 from cos_layer import *
 from sin_layer import *
+from transfer_edge import *
+from soft_transfer_edge import *
 
 class NeuralNet(object):
 
@@ -99,11 +101,17 @@ class NeuralNet(object):
       tied_to = None
       if edge.tied:
         tied_to = next(e for e in self.edge if e.node1.name == edge.tied_to_node1 and e.node2.name == edge.tied_to_node2)
-      self.edge.append(Edge(edge, node1, node2, self.t_op, tied_to=tied_to))
+      self.edge.append(CreateEdge(Edge, edge, node1, node2, self.t_op, tied_to=tied_to))
 
     self.input_datalayer = [node for node in self.layer if node.is_input]
     self.output_datalayer = [node for node in self.layer if node.is_output]
     self.node_list = self.Sort()
+
+  def ExchangeGlobalInfo(self):
+    for layer in self.layer:
+      layer.GetGlobalInfo(self)
+    for edge in self.edge:
+      edge.GetGlobalInfo(self)
 
   def Sort(self):
     """Topological sort."""
@@ -173,11 +181,7 @@ class NeuralNet(object):
         perf = deepnet_pb2.Metrics()
         perf.MergeFrom(layer.proto.performance_stats)
         perf.count = layer.batchsize
-        layer.dimsize.sum(axis=0, target=layer.unitcell)
-        perf.sparsity = layer.unitcell.euclid_norm() / layer.dimsize.shape[0]
-        layer.unitcell.greater_than(0)
-        if layer.unitcell.euclid_norm() == 0:
-          perf.sparsity *= -1
+        perf.sparsity = layer.dimsize.sum() / layer.dimsize.shape[0]
 
     if layer.hyperparams.dropout:
       if train and maxsteps - step >= layer.hyperparams.stop_dropout_for_last:
@@ -241,7 +245,7 @@ class NeuralNet(object):
       edge: The edge which is sending the derivative.
       deriv: The derivative w.r.t the inputs at the other end of this edge.
     """
-    if layer.is_input:
+    if layer.is_input or edge.proto.block_gradient:
       return
     if layer.dirty:  # If some derivatives have already been received.
       layer.deriv.add_dot(edge.params['weight'], deriv)
@@ -260,7 +264,7 @@ class NeuralNet(object):
     numcases = edge.node1.batchsize
     if edge.conv or edge.local:
       ConvOuter(edge, edge.temp)
-      edge.gradient.add_mult(edge.temp, alpha=1.0/numcases)
+      edge.gradient.add_mult(edge.temp, mult=1.0/numcases)
     else:
       edge.gradient.add_dot(edge.node1.state, deriv.T, mult=1.0/numcases)
     if edge.tied_to:
@@ -277,7 +281,7 @@ class NeuralNet(object):
     Args:
       step: Training step.
     """
-    layer.gradient.add_sums(layer.deriv, axis=1, mult = 1.0 / layer.batchsize)
+    layer.gradient.add_sums(layer.deriv, axis=1, mult=1.0 / layer.batchsize)
     if layer.tied_to:
       layer.tied_to.gradient.add(layer.gradient)
       layer.gradient.assign(0)
@@ -585,6 +589,8 @@ class NeuralNet(object):
     self.eval_now_steps = self.t_op.eval_after
     self.save_now_steps = self.t_op.checkpoint_after
     self.show_now_steps = self.t_op.show_after
+
+    self.ExchangeGlobalInfo()
 
   def Show(self):
     """Visualize the state of the layers and edges in the network."""

@@ -1,5 +1,5 @@
 """Convolutional operations."""
-from cudamat_conv import cudamat_conv2 as cc
+from cudamat import cudamat_conv as cc
 import math
 
 def ConvolveUp(inputs, edge, target):

@@ -35,6 +35,12 @@ class DBN(DBM):
     print 'Down:'
     self.downward_net.PrintNetwork()
 
+  def ExchangeGlobalInfo(self):
+    for layer in self.rbm.layer:
+      layer.GetGlobalInfo(self)
+    for edge in self.rbm.edge:
+      edge.GetGlobalInfo(self)
+
   @staticmethod
   def SplitDBN(net):
     #net = ReadModel(dbn_file)
