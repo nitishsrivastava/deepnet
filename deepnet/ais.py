@@ -3,7 +3,7 @@ import numpy as np
 from deepnet import dbm
 from deepnet import util
 from deepnet import trainer as tr
-import cudamat as cm
+from choose_matrix_library import *
 import sys
 import numpy as np
 import pdb

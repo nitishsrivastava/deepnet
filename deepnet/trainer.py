@@ -3,7 +3,7 @@ from fastdropoutnet import *
 from dbm import *
 from dbn import *
 from sparse_coder import *
-import cudamat as cm
+from choose_matrix_library import *
 import numpy as np
 from cudamat import gpu_lock
 from time import sleep

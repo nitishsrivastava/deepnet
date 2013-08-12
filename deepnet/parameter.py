@@ -1,4 +1,4 @@
-import cudamat as cm
+from choose_matrix_library import *
 import deepnet_pb2
 import logging
 import numpy as np

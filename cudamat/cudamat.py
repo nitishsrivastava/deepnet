@@ -895,9 +895,7 @@ class CUDAMatrix(object):
 
     def choose_max(self, axis, target = None):
         """
-        Find the maximum value along the given dimension, where 0 represents the
-        leading dimension and 1 represents the non-leading dimension. If a target
-        is not prvided, a new vector is created for storing the result.
+        Sets the argmax along axis to 1 and rest to zero.
         """
 
         m, n = self.shape
@@ -1302,7 +1300,7 @@ class CUDAMatrix(object):
 
     def get_softmax_cross_entropy(self, labels, target, tiny=1e-10):
         """
-        target[i] = -log(self[label[i]]).
+        target[i] = -log(self[label[i]] + tiny).
         """
         assert labels.shape == (1, self.shape[1])
         assert target.shape == labels.shape
@@ -1320,7 +1318,7 @@ class CUDAMatrix(object):
 
     def apply_softmax_grad(self, labels, target = None):
         """
-        Apply logistic derivative, where val is the activation of logistic units.
+        Apply softmax derivative, where labels are the correct labels.
         """
         if not target:
             target = self
