@@ -124,14 +124,14 @@ class EigenMatrix(object):
     self.T = TransposedEigenMatrix(self.mat)
 
   @staticmethod
-  def init_random(seed=1):
+  def init_random(seed=0):
     """
     Initialize and seed the random number generator.
     """
-    assert seed != 0, "Seed must be a non-zero integer."
+    assert seed >= 0, "Seed must be a non-negative integer."
     EigenMatrix.rnd_state = rnd_struct()
     EigenMatrix.rnd_state_p = ct.pointer(EigenMatrix.rnd_state)
-    _eigenmat.init_random(EigenMatrix.rnd_state_p, ct.c_int(seed))
+    _eigenmat.init_random(EigenMatrix.rnd_state_p, ct.c_int(seed+1))
  
 
   @property
@@ -454,6 +454,17 @@ class EigenMatrix(object):
       raise generate_exception(err_code)
 
     return target
+
+  def add_mult_sign(self, mat2, mult = 1.):
+    """
+    Add multiple of sign of mat2 to the matrix.
+    """
+
+    err_code = _eigenmat.add_mult_sign(self.p_mat, mat2.p_mat, ct.c_float(mult))
+    if err_code:
+      raise generate_exception(err_code)
+
+    return self
 
   def mult_diagonal(self, val, target=None):
     """

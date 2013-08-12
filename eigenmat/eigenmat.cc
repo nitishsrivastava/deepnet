@@ -277,6 +277,13 @@ extern int add_col_vec(eigenmat* mat, eigenmat* vec, eigenmat* target) {
   return 0;
 }
 
+extern int add_mult_sign(eigenmat* mat, eigenmat* mat2, float mult) {
+  for (int i = 0; i < mat->size[0] * mat->size[1]; i++) {
+    mat->data[i] += (mat2->data[i] == 0) ? 0 : ((mat2->data[i] > 0) ? mult:-mult);
+  }
+  return 0;
+}
+
 extern int add_col_mult(eigenmat* mat, eigenmat* vec, eigenmat* target, float mult) {
   unsigned int h = mat->size[0],
          w = mat->size[1];
@@ -657,7 +664,7 @@ extern int choose_max_by_axis(eigenmat* mat, eigenmat* target, int axis) {
     for (int i = 0; i < w; i++) {
       int argmax = 0;
       const float *mat_data = &mat->data[i * h];
-      const float *target_data = &target->data[i * h];
+      float *target_data = &target->data[i * h];
       for (int j = 1; j < h; j++) 
         if (mat_data[argmax] < mat_data[j]) argmax = j;
       for (int j = 0; j < h; j++) target_data[j] = (j == argmax) ? 1 : 0;
@@ -666,7 +673,7 @@ extern int choose_max_by_axis(eigenmat* mat, eigenmat* target, int axis) {
     for (int i = 0; i < h; i++) {
       int argmax = 0;
       const float *mat_data = &mat->data[i];
-      const float *target_data = &target->data[i];
+      float *target_data = &target->data[i];
       for (int j = 1; j < w; j++) 
         if (mat_data[argmax*h] < mat_data[j*h]) argmax = j;
       for (int j = 0; j < w; j++) target_data[j*h] = (j == argmax) ? 1 : 0;

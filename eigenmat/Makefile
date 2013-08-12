@@ -1,5 +1,7 @@
-eigenmat:
-	g++ -O3 -I/home/nitish/eigen-eigen-2249f9c22fe8/ -o libeigenmat.so --shared -fopenmp eigenmat.cc ziggurat.cpp
+all: libeigenmat.so
+
+libeigenmat.so: eigenmat.cc eigenmat.h ziggurat.cpp ziggurat.hpp
+	g++ -O3 -fPIC -I/u/nitish/eigen -o libeigenmat.so --shared -fopenmp eigenmat.cc ziggurat.cpp
 
 clean:
-	rm *.linkinfo *.pyc *.so
+	rm -rf *.linkinfo *.pyc *.so
