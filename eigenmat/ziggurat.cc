@@ -6,7 +6,7 @@
 
 using namespace std;
 
-# include "ziggurat.hpp"
+# include "ziggurat.h"
 
 //****************************************************************************80
 

@@ -4,6 +4,8 @@ import numpy as np
 
 if platform.system() == 'Windows':
   _eigenmat = ct.cdll.LoadLibrary('libeigenmat.dll')
+elif platform.system() == 'Darwin':
+  _eigenmat = ct.cdll.LoadLibrary('libeigenmat.dylib')
 else:
   _eigenmat = ct.cdll.LoadLibrary('libeigenmat.so')
 

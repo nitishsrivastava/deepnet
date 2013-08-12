@@ -5,7 +5,6 @@ from dbn import *
 from sparse_coder import *
 from choose_matrix_library import *
 import numpy as np
-from cudamat import gpu_lock
 from time import sleep
 
 def LockGPU(max_retries=10):
@@ -47,12 +46,14 @@ def CreateDeepnet(model, train_op, eval_op):
     raise Exception('Model not implemented.')
 
 def main():
-  board = LockGPU()
+  if use_gpu == 'yes':
+    board = LockGPU()
   model, train_op, eval_op = LoadExperiment(sys.argv[1], sys.argv[2],
                                             sys.argv[3])
   model = CreateDeepnet(model, train_op, eval_op)
   model.Train()
-  FreeGPU(board)
+  if use_gpu == 'yes':
+    FreeGPU(board)
   #raw_input('Press Enter.')
 
 if __name__ == '__main__':

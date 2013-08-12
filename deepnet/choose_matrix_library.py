@@ -10,5 +10,7 @@ if use_gpu == 'auto':
     use_gpu = 'no'
 if use_gpu == 'yes':
   import cudamat as cm
+  from cudamat import cudamat_conv as cc
+  from cudamat import gpu_lock
 elif use_gpu == 'no':
   import eigenmat as cm

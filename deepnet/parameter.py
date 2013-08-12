@@ -6,7 +6,6 @@ import os.path
 import util
 import visualize
 import pdb
-from cudamat import cudamat_conv as cc
 
 class Parameter(object):
 

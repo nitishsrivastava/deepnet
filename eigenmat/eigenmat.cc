@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <Eigen/Dense>
 #include "eigenmat.h"
-#include "ziggurat.hpp"
+#include "ziggurat.h"
 
 extern "C" {
 
