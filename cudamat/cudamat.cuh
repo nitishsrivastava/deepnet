@@ -33,3 +33,18 @@ struct rnd_struct {
     unsigned long long* dev_words;
 };
 
+struct sparse_data {
+  int *indices, *indptr;
+  float* data;
+};
+
+struct cudamat_sparse {
+    sparse_data data_host;
+    sparse_data data_device;
+    int on_device;
+    int on_host;
+    int size[2];
+    int is_trans; // 0 or 1
+    int owns_data;
+    int nnz;
+};

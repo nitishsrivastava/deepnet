@@ -59,6 +59,7 @@ __global__ void kArgMaxColumnwise(float* mat, float* target, unsigned int width,
 __global__ void kSqSumColumnwise(float* mat, float* target, unsigned int width, unsigned int height, float mult, float p);
 __global__ void kNormLimitColumnwise(float* mat, float* target, float norm, unsigned int width, unsigned int height);
 __global__ void kSumAll(float* mat, unsigned int len);
+__global__ void kSparseDot(int m, int n, int k, float *data, int* indptr, int* indices, float *dense_data, float* target, float beta, float alpha);
 __global__ void kSign(float* mat, float* target, unsigned int len);
 __global__ void kApplySigmoid(float* mat, float* target, unsigned int len);
 __global__ void kApplySin(float* mat, float* target, unsigned int len);

@@ -122,6 +122,34 @@ extern int allocate_device_memory(cudamat* mat) {
     return 0;
 }
 
+extern int allocate_device_memory_sparse(cudamat_sparse* mat) {
+    int nnz = mat->nnz, rows = mat->size[0];
+
+    cublasStatus stat;
+
+    stat = cublasAlloc(nnz, sizeof(mat->data_device.data[0]), (void**)&mat->data_device.data);
+    if (stat != CUBLAS_STATUS_SUCCESS || check_cublas_error()) {
+        checkCUDAError();
+        return CUBLAS_ERROR;
+    }
+
+    stat = cublasAlloc(nnz, sizeof(mat->data_device.indices[0]), (void**)&mat->data_device.indices);
+    if (stat != CUBLAS_STATUS_SUCCESS || check_cublas_error()) {
+        checkCUDAError();
+        return CUBLAS_ERROR;
+    }
+
+    stat = cublasAlloc(rows + 1, sizeof(mat->data_device.indptr[0]), (void**)&mat->data_device.indptr);
+    if (stat != CUBLAS_STATUS_SUCCESS || check_cublas_error()) {
+        checkCUDAError();
+        return CUBLAS_ERROR;
+    }
+
+    mat->on_device = 1;
+    return 0;
+}
+
+
 extern int copy_to_host(cudamat* mat) {
     int len = mat->size[0]*mat->size[1];
 
@@ -156,6 +184,35 @@ extern int copy_to_device(cudamat* mat) {
 
     return 0;
 }
+
+extern int copy_sparse_to_device(cudamat_sparse* mat) {
+    int len = mat->nnz, rows = mat->size[0];
+    int err_code = 0;
+
+    //if (!mat->owns_data)
+    //    return VIEW_ERROR;
+
+    if (!mat->on_device) {
+        err_code = allocate_device_memory_sparse(mat);
+        if (err_code)
+            return err_code;
+    }
+
+    cublasSetVector(len, sizeof(mat->data_host.data[0]), mat->data_host.data, 1, mat->data_device.data, 1);
+    if (check_cublas_error())
+        return CUBLAS_ERROR;
+
+    cublasSetVector(len, sizeof(mat->data_host.indices[0]), mat->data_host.indices, 1, mat->data_device.indices, 1);
+    if (check_cublas_error())
+        return CUBLAS_ERROR;
+
+    cublasSetVector(rows + 1, sizeof(mat->data_host.indptr[0]), mat->data_host.indptr, 1, mat->data_device.indptr, 1);
+    if (check_cublas_error())
+        return CUBLAS_ERROR;
+
+    return 0;
+}
+
 
 extern int copy_on_device(cudamat* mat1, cudamat* mat2) {
     int len = mat1->size[0]*mat1->size[1];
@@ -346,6 +403,20 @@ extern void init_from_array(cudamat* mat, float* data, int m, int n) {
     mat->is_trans = 0;
     mat->owns_data = 1;
 }
+
+extern void init_from_sparse_array(cudamat_sparse* mat, float* data, int* indices, int* indptr, int m, int n, int nnz) {
+    mat->data_host.data = data;
+    mat->data_host.indices = indices;
+    mat->data_host.indptr = indptr;
+    mat->size[0] = m;
+    mat->size[1] = n;
+    mat->on_device = 0;
+    mat->on_host = 1;
+    mat->is_trans = 0;
+    mat->owns_data = 1;
+    mat->nnz = nnz;
+}
+
 
 extern void set_on_device(cudamat* mat) {
   mat->on_device = 1;
@@ -1623,6 +1694,41 @@ extern int dot(cudamat* mat1, cudamat* mat2, cudamat* target, float beta, float 
 
     return 0;
 }
+
+extern int sparse_dot(cudamat_sparse* mat1, cudamat* mat2, cudamat* target, float beta, float alpha) {
+    if (!mat1->on_device || !mat2->on_device || !target->on_device)
+        return ERROR_NOT_ON_DEVICE;
+    int m = mat1->size[0],
+        k = mat1->size[1],
+        k2 = mat2->size[0],
+        n = mat2->size[1];
+
+    if (k != k2) {
+        return ERROR_INCOMPATIBLE_DIMENSIONS;
+    }
+    unsigned int grid_x = m / COPY_BLOCK_SIZE;
+    if (m % COPY_BLOCK_SIZE)
+        grid_x++;
+
+    unsigned int grid_y = n / COPY_BLOCK_SIZE;
+    if (n % COPY_BLOCK_SIZE)
+        grid_y++;
+
+    dim3 grid(grid_x, grid_y, 1);
+    dim3 threads(COPY_BLOCK_SIZE, COPY_BLOCK_SIZE, 1);
+
+    kSparseDot<<<grid, threads>>>(m, n, k, mat1->data_device.data,
+        mat1->data_device.indptr,
+        mat1->data_device.indices,
+        mat2->data_device, target->data_device, beta, alpha);
+    if (check_cublas_error())
+        return CUBLAS_ERROR;
+
+    cudaThreadSynchronize();
+
+    return 0;
+}
+
 
 extern float vdot(cudamat* mat1, cudamat* mat2, int* err_code) {
     int len = mat1->size[0]*mat1->size[1];
