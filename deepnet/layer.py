@@ -38,6 +38,7 @@ class Layer(Parameter):
     self.validation_data_handler = None
     self.test_data_handler = None
     self.tied_to = None
+    self.data_tied_to = None
     self.data = None
     self.deriv = None
     self.prefix = proto.prefix

@@ -515,7 +515,7 @@ class NeuralNet(object):
       for i, layer in enumerate(self.datalayer):
         layer.SetData(data_list[i])
     for layer in self.tied_datalayer:
-      data = layer.tied_to.data
+      data = layer.data_tied_to.data
       if data.shape[1] != self.batchsize:
         self.ResetBatchsize(data.shape[1])
       layer.SetData(data)
@@ -543,8 +543,8 @@ class NeuralNet(object):
       data_field = node.proto.data_field
       if data_field.tied:
         self.tied_datalayer.append(node)
-        node.tied_to = next(l for l in self.datalayer\
-                            if l.name == data_field.tied_to)
+        node.data_tied_to = next(l for l in self.datalayer\
+                                 if l.name == data_field.tied_to)
       else:
         self.datalayer.append(node)
         hyp_list.append(node.hyperparams)
