@@ -9,7 +9,7 @@ class TanhLayer(Layer):
     return proto.hyperparams.activation == deepnet_pb2.Hyperparams.TANH
 
   def ApplyActivation(self):
-    cm.sigmoid(self.state)
+    cm.tanh(self.state)
 
   def Sample(self):
     self.state.sample_bernoulli_tanh(target=self.sample)
